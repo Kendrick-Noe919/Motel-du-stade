@@ -1,0 +1,362 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum EtatChambre {
+  DISPONIBLE
+  OCCUPEE
+  MAINTENANCE
+  NETTOYAGE
+}
+
+enum StatutReservation {
+  EN_ATTENTE
+  CONFIRMEE
+  EN_COURS
+  TERMINEE
+  ANNULEE
+}
+
+enum SourceReservation {
+  EN_LIGNE
+  RECEPTION
+}
+
+enum ModePaiement {
+  ESPECES
+  CARTE
+  VIREMENT
+  MOBILE_MONEY
+}
+
+enum TypeMouvement {
+  ENTREE
+  SORTIE
+}
+
+enum Sexe {
+  M
+  F
+}
+
+enum ModeTarification {
+  NUITEE
+  HORAIRE
+}
+
+enum CategorieService {
+  BLANCHISSERIE
+  RESTAURANT
+  MINIBAR
+  AUTRE
+}
+
+// ============================================================
+// UTILISATEURS & RÔLES (relation N-N)
+// ============================================================
+
+model Role {
+  id           Int               @id @default(autoincrement())
+  libelle      String            @unique
+  description  String?
+
+  utilisateurs UtilisateurRole[]
+
+  @@map("roles")
+}
+
+model Utilisateur {
+  id             Int               @id @default(autoincrement())
+  nom            String
+  prenom         String
+  email          String            @unique
+  motDePasse     String
+  telephone      String?
+  actif          Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  roles          UtilisateurRole[]
+  caisses        Caisse[]
+  ventesDirectes VenteDirecte[]
+
+  @@map("utilisateurs")
+}
+
+// Table de jonction pour la relation N-N Utilisateur <-> Role
+model UtilisateurRole {
+  id            Int         @id @default(autoincrement())
+  utilisateur   Utilisateur @relation(fields: [utilisateurId], references: [id])
+  utilisateurId Int
+  role          Role        @relation(fields: [roleId], references: [id])
+  roleId        Int
+
+  @@unique([utilisateurId, roleId])
+  @@map("utilisateur_roles")
+}
+
+// ============================================================
+// CLIENTS
+// Nom/prénom/sexe optionnels (client de passage), téléphone = pivot
+// obligatoire et unique. Email/motDePasse optionnels (compte en ligne).
+// ============================================================
+
+model Client {
+  id           Int           @id @default(autoincrement())
+  nom          String?
+  prenom       String?
+  sexe         Sexe?
+  telephone    String        @unique
+  email        String?       @unique
+  motDePasse   String?
+  adresse      String?
+  numeroPiece  String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  reservations Reservation[]
+
+  @@map("clients")
+}
+
+// ============================================================
+// CHAMBRES
+// TypeChambre porte la tarification nuitée + horaire + promo
+// ============================================================
+
+model TypeChambre {
+  id                      Int       @id @default(autoincrement())
+  libelle                 String
+  prixParNuit             Decimal   @db.Decimal(10, 2)
+  prixPremiereHeure       Decimal?  @db.Decimal(10, 2)
+  prixHeureSupplementaire Decimal?  @db.Decimal(10, 2)
+  promo                   Decimal?  @db.Decimal(5, 2) // pourcentage, ex: 10.00 = -10%
+  capacite                Int
+  description             String?
+
+  chambres                Chambre[]
+
+  @@map("types_chambre")
+}
+
+model Chambre {
+  id            Int          @id @default(autoincrement())
+  numero        String       @unique
+  etat          EtatChambre  @default(DISPONIBLE)
+  etage         Int?
+
+  typeChambre   TypeChambre  @relation(fields: [typeChambreId], references: [id])
+  typeChambreId Int
+
+  reservations  Reservation[]
+
+  @@map("chambres")
+}
+
+// ============================================================
+// RÉSERVATIONS
+// Mode de tarification au choix (nuitée ou horaire), lié à un Séjour
+// (occupation réelle, check-in/check-out)
+// ============================================================
+
+model Reservation {
+  id               Int               @id @default(autoincrement())
+  dateReservation  DateTime          @default(now())
+  dateArrivee      DateTime
+  dateDepart       DateTime
+  modeTarification ModeTarification  @default(NUITEE)
+  nombreNuits      Int?
+  nombreHeures     Int?
+  montantTotal     Decimal           @db.Decimal(10, 2)
+  statut           StatutReservation @default(EN_ATTENTE)
+  source           SourceReservation @default(RECEPTION)
+
+  client           Client            @relation(fields: [clientId], references: [id])
+  clientId         Int
+  chambre          Chambre           @relation(fields: [chambreId], references: [id])
+  chambreId        Int
+
+  paiements        Paiement[]
+  sejour           Sejour?
+
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  @@map("reservations")
+}
+
+// ============================================================
+// SÉJOURS (occupation réelle, distincte de la Réservation)
+// ============================================================
+
+model Sejour {
+  id                    Int                   @id @default(autoincrement())
+  dateEntree            DateTime              @default(now())
+  dateSortie            DateTime?
+  tarifApplique         Decimal?              @db.Decimal(10, 2)
+
+  reservation           Reservation           @relation(fields: [reservationId], references: [id])
+  reservationId         Int                   @unique
+
+  consommations         Consommation[]
+  heuresSupplementaires HeureSupplementaire[]
+
+  createdAt             DateTime              @default(now())
+
+  @@map("sejours")
+}
+
+// ============================================================
+// HEURES SUPPLÉMENTAIRES (prolongation d'un séjour en mode horaire)
+// ============================================================
+
+model HeureSupplementaire {
+  id           Int      @id @default(autoincrement())
+  nombreHeures Int
+  prixParHeure Decimal  @db.Decimal(10, 2)
+  montant      Decimal  @db.Decimal(10, 2)
+  dateAjout    DateTime @default(now())
+
+  sejour       Sejour   @relation(fields: [sejourId], references: [id])
+  sejourId     Int
+
+  @@map("heures_supplementaires")
+}
+
+// ============================================================
+// SERVICES SUPPLÉMENTAIRES (catalogue) & CONSOMMATIONS (liées à un séjour)
+// ============================================================
+
+model Service {
+  id            Int              @id @default(autoincrement())
+  nom           String
+  categorie     CategorieService @default(AUTRE)
+  prix          Decimal          @db.Decimal(10, 2)
+  description   String?
+
+  consommations Consommation[]
+  lignesVente   LigneVente[]
+
+  @@map("services")
+}
+
+model Consommation {
+  id               Int      @id @default(autoincrement())
+  quantite         Int      @default(1)
+  dateConsommation DateTime @default(now())
+  prixApplique     Decimal  @db.Decimal(10, 2)
+
+  sejour           Sejour   @relation(fields: [sejourId], references: [id])
+  sejourId         Int
+  service          Service  @relation(fields: [serviceId], references: [id])
+  serviceId        Int
+
+  @@map("consommations")
+}
+
+// ============================================================
+// VENTES DIRECTES (point de vente Bar/Restaurant, hors séjour)
+// ============================================================
+
+model VenteDirecte {
+  id            Int          @id @default(autoincrement())
+  dateVente     DateTime     @default(now())
+  montantTotal  Decimal      @db.Decimal(10, 2)
+
+  utilisateur   Utilisateur  @relation(fields: [utilisateurId], references: [id])
+  utilisateurId Int
+
+  lignes        LigneVente[]
+
+  @@map("ventes_directes")
+}
+
+model LigneVente {
+  id           Int          @id @default(autoincrement())
+  quantite     Int          @default(1)
+  prixApplique Decimal      @db.Decimal(10, 2)
+
+  vente        VenteDirecte @relation(fields: [venteId], references: [id])
+  venteId      Int
+  service      Service      @relation(fields: [serviceId], references: [id])
+  serviceId    Int
+
+  @@map("lignes_vente")
+}
+
+// ============================================================
+// PAIEMENTS & FACTURES
+// ============================================================
+
+model Paiement {
+  id                Int          @id @default(autoincrement())
+  datePaiement      DateTime     @default(now())
+  montant           Decimal      @db.Decimal(10, 2)
+  modePaiement      ModePaiement
+  reference         String?
+  rembourse         Boolean      @default(false)
+  dateRemboursement DateTime?
+
+  reservation       Reservation  @relation(fields: [reservationId], references: [id])
+  reservationId     Int
+
+  facture           Facture?
+
+  @@map("paiements")
+}
+
+model Facture {
+  id            Int      @id @default(autoincrement())
+  numeroFacture String   @unique
+  dateEmission  DateTime @default(now())
+  montantHT     Decimal  @db.Decimal(10, 2)
+  tva           Decimal  @db.Decimal(10, 2)
+  montantTTC    Decimal  @db.Decimal(10, 2)
+
+  paiement      Paiement @relation(fields: [paiementId], references: [id])
+  paiementId    Int      @unique
+
+  @@map("factures")
+}
+
+// ============================================================
+// CAISSE
+// ============================================================
+
+model Caisse {
+  id             Int               @id @default(autoincrement())
+  dateOuverture  DateTime          @default(now())
+  dateFermeture  DateTime?
+  soldeInitial   Decimal           @db.Decimal(10, 2)
+  soldeFinal     Decimal?          @db.Decimal(10, 2)
+  ouverte        Boolean           @default(true)
+
+  utilisateur    Utilisateur       @relation(fields: [utilisateurId], references: [id])
+  utilisateurId  Int
+
+  mouvements     MouvementCaisse[]
+
+  @@map("caisses")
+}
+
+model MouvementCaisse {
+  id             Int           @id @default(autoincrement())
+  dateMouvement  DateTime      @default(now())
+  type           TypeMouvement
+  montant        Decimal       @db.Decimal(10, 2)
+  motif          String?
+
+  caisse         Caisse        @relation(fields: [caisseId], references: [id])
+  caisseId       Int
+
+  @@map("mouvements_caisse")
+}

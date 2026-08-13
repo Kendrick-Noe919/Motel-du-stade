@@ -1,0 +1,69 @@
+@import './styles/variables.css';
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--stone);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0;
+}
+
+h1 { font-size: 62px; }
+h2 { font-size: 24px; }
+h3 { font-size: 18px; }
+
+/* Toute donnée précise (chiffres, dates, identifiants) passe en mono — c'est notre signature de rigueur */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Focus clavier toujours visible — accessibilité non négociable */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  font-weight: 400;
+}
+/* ---------- Responsive : tableaux qui débordent en scroll horizontal ---------- */
+@media (max-width: 768px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+}
+
+/* ---------- Responsive : grilles à 2 colonnes qui passent en 1 colonne ---------- */
+@media (max-width: 640px) {
+  .grille-2col {
+    grid-template-columns: 1fr !important;
+  }
+}

@@ -1,0 +1,48 @@
+:root {
+  /* ---------- Couleurs : identité Stravix ---------- */
+  --stone: #F6F7F9;
+  --stone-dim: #EEEEEE;
+  --surface: #FFFFFF;
+  --ink: #17241F;
+  --slate: #6B7280;
+  --slate-light: #9CA3AF;
+
+  --moss: #14532D;        /* vert forêt profond — sidebar actif, boutons primaires */
+  --moss-light: #1F6B3D;
+
+  --signal: #22C55E;      /* vert émeraude vif — accent, graphiques, succès */
+  --signal-dark: #14532D;
+  --signal-dim: #DCFCE7;  /* panneaux de mise en avant, fonds de badge */
+  --signal-dim-soft: #F0FDF4;
+
+  --line: #E6EBF1;
+  --line-strong: #D1D5DB;
+
+  --gradient-signal: linear-gradient(135deg, #22C55E 0%, #14532D 100%);
+
+  /* ---------- États sémantiques ---------- */
+  --success: #22AD5C;
+  --success-bg: #E9FBF0;
+  --warning: #F59E0B;
+  --warning-bg: #FFFBEB;
+  --danger: #EF4444;
+  --danger-bg: #FEF2F2;
+  --info: #3B82F6;
+  --info-bg: #EFF6FF;
+
+  --font-display: 'Satoshi', ui-sans-serif, system-ui, sans-serif;
+  --font-body: 'Satoshi', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+
+  --shadow-sm: 0px 1px 3px 0px rgba(23, 36, 31, 0.08);
+  --shadow-md: 0px 10px 24px -6px rgba(20, 83, 45, 0.14);
+  --shadow-focus: 0 0 0 3px rgba(34, 197, 94, 0.22);
+
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-5: 24px; --space-6: 32px; --space-8: 48px;
+}
