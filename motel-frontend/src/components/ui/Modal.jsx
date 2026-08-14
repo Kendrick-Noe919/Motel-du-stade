@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 
 export default function Modal({ ouvert, onFermer, titre, children, largeur = 480 }) {
-  // Ferme la modale avec la touche Échap — un réflexe UX attendu
+  // Ferme la modale avec la touche Échap, un réflexe UX attendu
   useEffect(() => {
     if (!ouvert) return;
     function handleEchap(e) {

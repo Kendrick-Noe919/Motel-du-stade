@@ -17,7 +17,7 @@ export default function Champ({ label, erreur, hint, children }) {
   );
 }
 
-// Style partagé pour <input>, <select>, <textarea> — reprend fidèlement InputGroup/select.tsx du template
+// Style partagé pour <input>, <select>, <textarea>, reprend fidèlement InputGroup/select.tsx du template
 export const styleInput = {
   width: '100%',
   height: 44,
@@ -33,7 +33,7 @@ export const styleInput = {
   boxSizing: 'border-box',
 };
 
-// Gestionnaires de focus réutilisables — juste la bordure qui passe en indigo, comme dans la référence
+// Gestionnaires de focus réutilisables : juste la bordure qui passe en indigo, comme dans la référence
 export const focusHandlers = {
   onFocus: (e) => { e.target.style.borderColor = 'var(--signal)'; },
   onBlur: (e) => { e.target.style.borderColor = 'var(--line)'; },

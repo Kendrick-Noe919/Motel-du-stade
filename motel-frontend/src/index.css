@@ -14,6 +14,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Le shell de l'application occupe exactement la fenêtre : le défilement
+   appartient à <main>, jamais à la page, sinon la barre latérale part avec. */
+html, body, #root {
+  height: 100%;
+}
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh; /* évite le décalage dû à la barre d'URL sur mobile */
+  overflow: hidden;
+}
+
 h1, h2, h3 {
   font-family: var(--font-display);
   font-weight: 600;
@@ -25,7 +37,7 @@ h1 { font-size: 62px; }
 h2 { font-size: 24px; }
 h3 { font-size: 18px; }
 
-/* Toute donnée précise (chiffres, dates, identifiants) passe en mono — c'est notre signature de rigueur */
+/* Toute donnée précise (chiffres, dates, identifiants) passe en mono, c'est notre signature de rigueur */
 .mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
@@ -35,7 +47,7 @@ button {
   font-family: inherit;
 }
 
-/* Focus clavier toujours visible — accessibilité non négociable */
+/* Focus clavier toujours visible : accessibilité non négociable */
 :focus-visible {
   outline: none;
   box-shadow: var(--shadow-focus);
@@ -52,6 +64,42 @@ body {
   font-family: var(--font-body);
   font-weight: 400;
 }
+/* ============================================================
+   ANIMATIONS D'ENTRÉE
+   Utilisées à l'ouverture de l'écran de connexion. Elles restent courtes et
+   discrètes : une page qui se met en place, pas un spectacle qu'on subit à
+   chaque connexion.
+   ============================================================ */
+@keyframes apparition-montee {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes apparition-fondu {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Léger recul de l'image : elle se pose au lieu d'apparaître d'un coup */
+@keyframes apparition-zoom {
+  from { opacity: 0; transform: scale(1.08); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.anim-montee { animation: apparition-montee 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+.anim-fondu  { animation: apparition-fondu 0.7s ease both; }
+.anim-zoom   { animation: apparition-zoom 1.1s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
+
+/* Le mouvement rend malades certaines personnes, et le système d'exploitation
+   permet de le dire. On respecte ce réglage plutôt que de l'ignorer. */
+@media (prefers-reduced-motion: reduce) {
+  .anim-montee, .anim-fondu, .anim-zoom {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+}
+
 /* ---------- Responsive : tableaux qui débordent en scroll horizontal ---------- */
 @media (max-width: 768px) {
   table {
@@ -66,4 +114,50 @@ body {
   .grille-2col {
     grid-template-columns: 1fr !important;
   }
+}
+/* ============================================================
+   IMPRESSION
+   Les rapports et les recettes doivent sortir sur papier proprement :
+   on retire la navigation, les boutons et les fonds, on garde le contenu.
+   ============================================================ */
+@media print {
+  /* Barre latérale, en-tête et commandes n'ont rien à faire sur le papier */
+  aside,
+  header,
+  .sans-impression {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+    color: #000;
+    font-size: 11pt;
+  }
+
+  /* Le shell est borné à la fenêtre à l'écran : sur papier il doit se déplier,
+     sinon seule la première page sort. */
+  html, body, #root, .app-shell, .app-shell > * {
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  main {
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  /* Les cartes redeviennent de simples blocs encadrés, sans ombre ni fond */
+  [class*='carte'],
+  section {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  table { break-inside: auto; }
+  tr { break-inside: avoid; break-after: auto; }
+  thead { display: table-header-group; } /* l'en-tête se répète à chaque page */
+
+  a[href]::after { content: ''; } /* pas d'URL entre parenthèses */
+
+  @page { margin: 14mm; }
 }

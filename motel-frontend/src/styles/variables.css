@@ -7,10 +7,10 @@
   --slate: #6B7280;
   --slate-light: #9CA3AF;
 
-  --moss: #14532D;        /* vert forêt profond — sidebar actif, boutons primaires */
+  --moss: #14532D;        /* vert forêt profond : sidebar actif, boutons primaires */
   --moss-light: #1F6B3D;
 
-  --signal: #22C55E;      /* vert émeraude vif — accent, graphiques, succès */
+  --signal: #22C55E;      /* vert émeraude vif : accent, graphiques, succès */
   --signal-dark: #14532D;
   --signal-dim: #DCFCE7;  /* panneaux de mise en avant, fonds de badge */
   --signal-dim-soft: #F0FDF4;

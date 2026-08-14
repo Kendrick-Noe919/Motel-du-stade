@@ -1,17 +1,20 @@
 import { Router } from 'express';
 import { verifierToken, autoriserRoles } from '../middlewares/auth.middleware.js';
+import { ENCAISSEMENT } from '../config/roles.js';
 import {
   enregistrerPaiement, getAllPaiements, getPaiementsParReservation, rembourserPaiement, genererFacturePDF,
 } from '../controllers/paiement.controller.js';
 
 const router = Router();
 
-router.use(verifierToken); // toutes les routes ci-dessous nécessitent d'être connecté
+// Un paiement expose le nom du client et le montant : le barman n'a pas à y accéder,
+// ses propres ventes passent par le module Ventes.
+router.use(verifierToken, autoriserRoles(...ENCAISSEMENT));
 
 router.get('/', getAllPaiements);
 router.get('/reservation/:reservationId', getPaiementsParReservation);
 router.get('/:id/facture', genererFacturePDF);
-router.post('/', autoriserRoles('Administrateur', 'Manager', 'Receptionniste', 'Caissier'), enregistrerPaiement);
-router.patch('/:id/rembourser', autoriserRoles('Administrateur', 'Manager', 'Receptionniste', 'Caissier'), rembourserPaiement);
+router.post('/', enregistrerPaiement);
+router.patch('/:id/rembourser', rembourserPaiement);
 
 export default router;

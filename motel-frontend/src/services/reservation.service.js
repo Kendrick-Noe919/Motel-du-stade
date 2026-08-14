@@ -17,6 +17,12 @@ export async function creerReservation(reservation) {
   return data;
 }
 
+// Confirmer sans exiger le paiement intégral (réservation téléphonique, acompte)
+export async function confirmerReservation(id) {
+  const { data } = await api.patch(`/reservations/${id}/confirmer`);
+  return data;
+}
+
 export async function annulerReservation(id) {
   const { data } = await api.patch(`/reservations/${id}/annuler`);
   return data;

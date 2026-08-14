@@ -1,15 +1,31 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useIsTablet } from '../hooks/useMediaQuery';
 import Button from '../components/ui/Button';
 import Champ, { styleInput, focusHandlers } from '../components/ui/Champ';
 import Alerte from '../components/ui/Alerte';
+
+// Le visuel d'accueil.
+//
+// Le panneau de droite montrait un faux tableau de bord — taux d'occupation,
+// réservations du jour, revenus. Chiffres inventés, mais rien ne le disait au
+// visiteur : sur une page accessible avant toute connexion, cela donnait à lire
+// ce qui ressemblait à l'activité de l'établissement, et invitait à les brancher
+// un jour sur les vraies données.
+//
+// Image hébergée chez Unsplash le temps de la mise au point. Pour la servir
+// depuis le projet : déposer le fichier dans `public/images/`, puis remplacer
+// cette constante par '/images/auberge.jpg'. Rien d'autre à changer.
+const IMAGE_ACCUEIL = 'https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1600&q=80';
 
 export default function Login() {
   const [email, setEmail] = useState('');
   const [motDePasse, setMotDePasse] = useState('');
   const [erreur, setErreur] = useState('');
   const [enCours, setEnCours] = useState(false);
+  const [imageChargee, setImageChargee] = useState(false);
+  const estTablette = useIsTablet();
 
   const { connexion } = useAuth();
   const navigate = useNavigate();
@@ -28,22 +44,30 @@ export default function Login() {
     }
   }
 
+  // Les éléments du formulaire se posent l'un après l'autre. Le décalage reste
+  // court : au-delà, on attend la page au lieu de la regarder arriver.
+  const cascade = (rang) => ({ animationDelay: `${rang * 70}ms` });
+
   return (
-    <div style={{ minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr', background: 'var(--surface)' }}>
+    <div style={{
+      minHeight: '100vh', display: 'grid',
+      gridTemplateColumns: estTablette ? '1fr' : '1fr 1fr',
+      background: 'var(--surface)',
+    }}>
       {/* ---------- Formulaire ---------- */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-6)' }}>
         <form onSubmit={handleSubmit} style={{ width: 380, maxWidth: '100%' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-6)' }}>
+          <div className="anim-montee" style={{ ...cascade(0), display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-6)' }}>
             <div style={{ width: 30, height: 30, borderRadius: 8, background: 'var(--gradient-signal)' }} />
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 17 }}>Motel du Stade</span>
           </div>
 
-          <h1 style={{ fontSize: 26, marginBottom: 6 }}>Connexion</h1>
-          <p style={{ color: 'var(--slate)', fontSize: 13.5, marginBottom: 'var(--space-6)' }}>
+          <h1 className="anim-montee" style={{ ...cascade(1), fontSize: 26, marginBottom: 6 }}>Connexion</h1>
+          <p className="anim-montee" style={{ ...cascade(2), color: 'var(--slate)', fontSize: 13.5, marginBottom: 'var(--space-6)' }}>
             Accédez à votre espace de gestion du motel.
           </p>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          <div className="anim-montee" style={{ ...cascade(3), display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
             <Champ label="Email">
               <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="prenom.nom@motel.com" required autoFocus style={styleInput} {...focusHandlers} />
             </Champ>
@@ -60,39 +84,43 @@ export default function Login() {
         </form>
       </div>
 
-      {/* ---------- Panneau mint : aperçu de l'app ---------- */}
-      <div style={{
-        background: 'var(--signal-dim)', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center', padding: 'var(--space-8)', position: 'relative', overflow: 'hidden',
-      }}>
-        {/* Mini-cartes illustratives, façon aperçu produit */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 'var(--space-6)', width: 320 }}>
-          <div style={{ background: 'var(--surface)', borderRadius: 'var(--radius-md)', padding: 16, boxShadow: 'var(--shadow-sm)' }}>
-            <p style={{ fontSize: 11, color: 'var(--slate)', margin: 0 }}>Taux d'occupation</p>
-            <p className="mono" style={{ fontSize: 22, fontWeight: 700, margin: '4px 0 8px', color: 'var(--moss)' }}>78%</p>
-            <div style={{ height: 6, borderRadius: 999, background: 'var(--stone-dim)' }}>
-              <div style={{ width: '78%', height: '100%', borderRadius: 999, background: 'var(--gradient-signal)' }} />
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{ flex: 1, background: 'var(--surface)', borderRadius: 'var(--radius-md)', padding: 16, boxShadow: 'var(--shadow-sm)' }}>
-              <p style={{ fontSize: 11, color: 'var(--slate)', margin: 0 }}>Réservations</p>
-              <p className="mono" style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0' }}>12</p>
-            </div>
-            <div style={{ flex: 1, background: 'var(--surface)', borderRadius: 'var(--radius-md)', padding: 16, boxShadow: 'var(--shadow-sm)' }}>
-              <p style={{ fontSize: 11, color: 'var(--slate)', margin: 0 }}>Revenus du jour</p>
-              <p className="mono" style={{ fontSize: 18, fontWeight: 700, margin: '4px 0 0', color: 'var(--signal-dark)' }}>145 000</p>
-            </div>
+      {/* ---------- Panneau d'accueil : image, sans aucune donnée de l'établissement ---------- */}
+      {!estTablette && (
+        <div style={{ position: 'relative', overflow: 'hidden', background: 'var(--moss)' }}>
+          {/* Le fond vert tient la place pendant le chargement : sans lui, un carré
+              blanc clignote avant l'image. */}
+          <img
+            src={IMAGE_ACCUEIL}
+            alt="Façade d'une auberge et sa terrasse au bord de la piscine"
+            onLoad={() => setImageChargee(true)}
+            className={imageChargee ? 'anim-zoom' : undefined}
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              objectFit: 'cover', opacity: imageChargee ? 1 : 0,
+            }}
+          />
+
+          {/* Voile dégradé : il assoit le texte blanc quelle que soit la photo, et
+              rattache l'image à la couleur de la marque. */}
+          <div style={{
+            position: 'absolute', inset: 0,
+            background: 'linear-gradient(180deg, rgba(20,83,45,0.15) 0%, rgba(20,83,45,0.55) 55%, rgba(20,83,45,0.88) 100%)',
+          }} />
+
+          <div className="anim-fondu" style={{
+            position: 'relative', height: '100%', display: 'flex', flexDirection: 'column',
+            justifyContent: 'flex-end', padding: 'var(--space-8)', animationDelay: '350ms',
+          }}>
+            <h2 style={{ fontSize: 30, color: '#fff', marginBottom: 10, maxWidth: 420, lineHeight: 1.2 }}>
+              Pilotez votre motel, simplement
+            </h2>
+            <p style={{ color: 'rgba(255,255,255,0.86)', fontSize: 14.5, maxWidth: 420, margin: 0 }}>
+              Réservations, séjours, paiements et caisse : tout au même endroit,
+              pour toute votre équipe.
+            </p>
           </div>
         </div>
-
-        <h2 style={{ fontSize: 22, textAlign: 'center', color: 'var(--moss)', marginBottom: 8 }}>
-          Pilotez votre motel, simplement
-        </h2>
-        <p style={{ textAlign: 'center', color: 'var(--slate)', fontSize: 13.5, maxWidth: 320 }}>
-          Réservations, paiements, caisse et personnel — tout au même endroit, en temps réel.
-        </p>
-      </div>
+      )}
     </div>
   );
 }

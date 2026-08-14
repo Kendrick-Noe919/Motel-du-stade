@@ -201,12 +201,12 @@ export default function Clients() {
                       )}
                     </td>
                     <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>
-                      {labelSexe[client.sexe] || '—'}
+                      {labelSexe[client.sexe] || '-'}
                     </td>
                     <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, whiteSpace: 'nowrap' }}>{client.telephone}</td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{client.email || '—'}</td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{client.adresse || '—'}</td>
-                    <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: 'var(--slate)' }}>{client.numeroPiece || '—'}</td>
+                    <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{client.email || '-'}</td>
+                    <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{client.adresse || '-'}</td>
+                    <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: 'var(--slate)' }}>{client.numeroPiece || '-'}</td>
                     <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
                       {new Date(client.createdAt).toLocaleDateString('fr-FR')}
                     </td>
@@ -257,7 +257,7 @@ export default function Clients() {
           <div className="grille-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
             <Champ label="Sexe (optionnel)">
               <select value={sexe} onChange={(e) => setSexe(e.target.value)} style={styleInput}>
-                <option value="">—</option>
+                <option value="">Non précisé</option>
                 <option value="M">Homme</option>
                 <option value="F">Femme</option>
               </select>
@@ -298,7 +298,7 @@ export default function Clients() {
       <Modal
         ouvert={!!clientSelectionne}
         onFermer={() => setClientSelectionne(null)}
-        titre={clientSelectionne ? `Historique — ${nomComplet(clientSelectionne)}` : ''}
+        titre={clientSelectionne ? `Historique de ${nomComplet(clientSelectionne)}` : ''}
         largeur={560}
       >
         {historique === null ? (

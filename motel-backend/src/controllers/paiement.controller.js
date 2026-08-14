@@ -1,8 +1,9 @@
 import prisma from '../utils/prisma.js';
 import PDFDocument from 'pdfkit';
+import { exigerCaisseOuverte } from './caisse.controller.js';
 
 
-const TAUX_TVA = 0.18; // 18% — ajuste selon la réglementation en vigueur
+const TAUX_TVA = 0.18; // 18%, ajuste selon la réglementation en vigueur
 
 function genererNumeroFacture(paiementId) {
   const annee = new Date().getFullYear();
@@ -35,12 +36,17 @@ export async function enregistrerPaiement(req, res) {
     if (reservation.statut === 'ANNULEE') return res.status(400).json({ message: 'Impossible de payer une réservation annulée' });
 
     const resultat = await prisma.$transaction(async (tx) => {
+      // La caisse doit être ouverte AVANT d'encaisser : on ne la crée plus en douce,
+      // sinon le fond de caisse déclaré à l'ouverture ne veut plus rien dire.
+      const caisseOperateur = await exigerCaisseOuverte(tx, req.user.id);
+
       const paiement = await tx.paiement.create({
         data: {
           reservation: { connect: { id: Number(reservationId) } },
           montant: Number(montant),
           modePaiement,
           reference,
+          encaissePar: { connect: { id: req.user.id } },
         },
       });
 
@@ -69,23 +75,13 @@ export async function enregistrerPaiement(req, res) {
         });
       }
 
-      // ---------- Ouvre automatiquement la caisse de l'opérateur si besoin, et enregistre l'entrée ----------
-      let caisseOperateur = await tx.caisse.findFirst({
-        where: { utilisateurId: req.user.id, ouverte: true },
-      });
-
-      if (!caisseOperateur) {
-        caisseOperateur = await tx.caisse.create({
-          data: { utilisateur: { connect: { id: req.user.id } }, soldeInitial: 0, ouverte: true },
-        });
-      }
-
       const mouvement = await tx.mouvementCaisse.create({
         data: {
           caisse: { connect: { id: caisseOperateur.id } },
           type: 'ENTREE',
           montant: montantTTC,
-          motif: `Paiement réservation #${reservation.id} — ${reservation.client.prenom} ${reservation.client.nom} — ${modePaiement}`,
+          motif: `Paiement réservation #${reservation.id} · ${reservation.client.prenom} ${reservation.client.nom} · ${modePaiement}`,
+          creePar: { connect: { id: req.user.id } },
         },
       });
 
@@ -94,12 +90,13 @@ export async function enregistrerPaiement(req, res) {
 
     res.status(201).json(resultat);
   } catch (error) {
+    if (error.statut) return res.status(error.statut).json({ message: error.message });
     console.error(error);
     res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 }
 
-// Petit utilitaire local — le motif du mouvement de caisse reste lisible sans requête supplémentaire
+// Petit utilitaire local : le motif du mouvement de caisse reste lisible sans requête supplémentaire
 // function client_nom() {
 //   return 'client';
 // }
@@ -137,15 +134,15 @@ export async function getPaiementsParReservation(req, res) {
 }
 
 // ---------- PATCH /api/paiements/:id/rembourser ----------
-// Rembourser un paiement — peut déclencher une annulation de réservation
+// Rembourser un paiement : peut déclencher une annulation de réservation
 export async function rembourserPaiement(req, res) {
   try {
     const { id } = req.params;
-    const { annulerReservation } = req.body; // true/false — décision du réceptionniste
+    const { annulerReservation } = req.body; // true/false, décision du réceptionniste
 
     const paiement = await prisma.paiement.findUnique({
       where: { id: Number(id) },
-      include: { reservation: true },
+      include: { reservation: { include: { client: true, sejour: true } } },
     });
 
     if (!paiement) {
@@ -155,10 +152,35 @@ export async function rembourserPaiement(req, res) {
       return res.status(400).json({ message: 'Ce paiement est déjà remboursé' });
     }
 
+    // Même règle que l'annulation directe : tant que le client occupe la chambre,
+    // on ne solde rien sans passer par le check-out.
+    if (annulerReservation && paiement.reservation.sejour && !paiement.reservation.sejour.dateSortie) {
+      return res.status(409).json({
+        message: 'Le client est encore dans la chambre. Faites le check-out avant d\'annuler cette réservation.',
+      });
+    }
+
     const resultat = await prisma.$transaction(async (tx) => {
+      const caisse = await exigerCaisseOuverte(tx, req.user.id);
+
       const paiementRembourse = await tx.paiement.update({
         where: { id: Number(id) },
         data: { rembourse: true, dateRemboursement: new Date() },
+      });
+
+      // L'argent sort physiquement du tiroir : il doit sortir de la caisse aussi.
+      // Sans ce mouvement, le solde théorique reste au-dessus de la réalité et
+      // l'écart se creuse à chaque remboursement.
+      const client = paiement.reservation.client;
+      const mouvement = await tx.mouvementCaisse.create({
+        data: {
+          caisse: { connect: { id: caisse.id } },
+          type: 'SORTIE',
+          montant: Number(paiement.montant),
+          motif: `Remboursement paiement #${paiement.id} · réservation #${paiement.reservationId}`
+               + (client ? ` · ${client.prenom ?? ''} ${client.nom ?? ''}`.trimEnd() : ''),
+          creePar: { connect: { id: req.user.id } },
+        },
       });
 
       let reservation = paiement.reservation;
@@ -169,16 +191,17 @@ export async function rembourserPaiement(req, res) {
         });
       }
 
-      return { paiement: paiementRembourse, reservation };
+      return { paiement: paiementRembourse, reservation, mouvement, caisseId: caisse.id };
     });
 
     res.json(resultat);
   } catch (error) {
+    if (error.statut) return res.status(error.statut).json({ message: error.message });
     console.error(error);
     res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 }
-// GET /api/paiements/:id/facture — génère et renvoie le PDF de la facture
+// GET /api/paiements/:id/facture : génère et renvoie le PDF de la facture
 export async function genererFacturePDF(req, res) {
   try {
     const { id } = req.params;
@@ -222,7 +245,7 @@ export async function genererFacturePDF(req, res) {
     // ---------- Détail du séjour ----------
     doc.fontSize(11).fillColor('#111928').text('Détail du séjour :');
     doc.fontSize(10).fillColor('#374151');
-    doc.text(`Chambre N°${chambre.numero} — ${chambre.typeChambre.libelle}`);
+    doc.text(`Chambre N°${chambre.numero} · ${chambre.typeChambre.libelle}`);
     doc.text(`Du ${new Date(reservation.dateArrivee).toLocaleDateString('fr-FR')} au ${new Date(reservation.dateDepart).toLocaleDateString('fr-FR')} (${reservation.nombreNuits} nuit${reservation.nombreNuits > 1 ? 's' : ''})`);
     doc.moveDown(1.5);
 
@@ -240,7 +263,7 @@ export async function genererFacturePDF(req, res) {
     doc.fontSize(12).fillColor('#5750F1').text(`${facture.montantTTC}`, 400, startY + 50, { align: 'right' });
 
     doc.moveDown(3);
-    doc.fontSize(9).fillColor('#6B7280').text(`Mode de paiement : ${paiement.modePaiement}${paiement.reference ? ` — Réf. ${paiement.reference}` : ''}`);
+    doc.fontSize(9).fillColor('#6B7280').text(`Mode de paiement : ${paiement.modePaiement}${paiement.reference ? ` · Réf. ${paiement.reference}` : ''}`);
     doc.text(`Payé le ${new Date(paiement.datePaiement).toLocaleDateString('fr-FR')}`);
 
     doc.end();

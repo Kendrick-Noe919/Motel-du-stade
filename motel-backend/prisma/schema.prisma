@@ -13,9 +13,11 @@ datasource db {
 
 enum EtatChambre {
   DISPONIBLE
+  RESERVEE     // promise à une réservation confirmée, pas encore occupée
   OCCUPEE
-  MAINTENANCE
   NETTOYAGE
+  MAINTENANCE
+  HORS_SERVICE // sortie du parc exploitable, exclue du taux d'occupation
 }
 
 enum StatutReservation {
@@ -24,6 +26,7 @@ enum StatutReservation {
   EN_COURS
   TERMINEE
   ANNULEE
+  EXPIREE      // non confirmée dans le délai paramétré, libérée automatiquement
 }
 
 enum SourceReservation {
@@ -64,8 +67,11 @@ enum CategorieService {
 // UTILISATEURS & RÔLES (relation N-N)
 // ============================================================
 
+// `code` est l'identifiant technique utilisé partout dans le code (autoriserRoles,
+// config/acces.js). `libelle` n'est que l'affichage : le renommer ne casse rien.
 model Role {
   id           Int               @id @default(autoincrement())
+  code         String            @unique
   libelle      String            @unique
   description  String?
 
@@ -88,6 +94,16 @@ model Utilisateur {
   roles          UtilisateurRole[]
   caisses        Caisse[]
   ventesDirectes VenteDirecte[]
+
+  // Traçabilité : qui a fait quoi. Toutes ces relations sont optionnelles côté
+  // écriture, car les enregistrements antérieurs à cette migration n'ont pas d'auteur.
+  paiementsEncaisses Paiement[]        @relation("PaiementEncaissePar")
+  mouvementsCrees    MouvementCaisse[] @relation("MouvementCreePar")
+  reservationsCreees Reservation[]     @relation("ReservationCreeePar")
+  checkInsRealises   Sejour[]           @relation("SejourCheckInPar")
+  checkOutsRealises  Sejour[]           @relation("SejourCheckOutPar")
+  operations         JournalOperation[]
+  notifications      Notification[]     @relation("NotificationDestinataire")
 
   @@map("utilisateurs")
 }
@@ -163,6 +179,73 @@ model Chambre {
 }
 
 // ============================================================
+// JOURNAL DES OPÉRATIONS
+// Une seule table pour toute la traçabilité : qui, quoi, quand, sur quel objet.
+// ============================================================
+
+model JournalOperation {
+  id            Int          @id @default(autoincrement())
+  dateOperation DateTime     @default(now())
+  action        String       // ex: RESERVATION_ANNULEE, CAISSE_FERMEE, CHAMBRE_ETAT
+  cibleType     String       // ex: reservation, chambre, caisse, utilisateur
+  cibleId       Int?
+  resume        String       // phrase lisible affichée dans l'écran Historique
+  avant         String?      // état précédent, quand il a du sens
+  apres         String?
+
+  utilisateur   Utilisateur? @relation(fields: [utilisateurId], references: [id])
+  utilisateurId Int?
+  auteurNom     String?      // figé à l'écriture : survit à l'archivage du compte
+
+  @@index([dateOperation])
+  @@index([cibleType, cibleId])
+  @@index([utilisateurId])
+  @@map("journal_operations")
+}
+
+// ============================================================
+// NOTIFICATIONS
+// Adressées à un rôle entier (tous les barmans) ou à une personne précise.
+// ============================================================
+
+model Notification {
+  id            Int          @id @default(autoincrement())
+  dateCreation  DateTime     @default(now())
+  type          String       // ex: CHAMBRE_AJOUTEE, SERVICE_AJOUTE, ECART_CAISSE
+  titre         String
+  message       String
+  lien          String?      // route React vers l'écran concerné
+
+  roleCible     String?      // code de rôle : la notification vise tout le poste
+  utilisateurCibleId Int?    // ou une personne en particulier
+
+  lue           Boolean      @default(false)
+  dateLecture   DateTime?
+
+  utilisateurCible Utilisateur? @relation("NotificationDestinataire", fields: [utilisateurCibleId], references: [id])
+
+  @@index([roleCible, lue])
+  @@index([utilisateurCibleId, lue])
+  @@map("notifications")
+}
+
+// ============================================================
+// PARAMÈTRES GÉNÉRAUX
+// Réglages modifiables par l'administrateur sans toucher au code.
+// ============================================================
+
+model Parametre {
+  cle         String   @id
+  valeur      String
+  libelle     String
+  description String?
+  unite       String?  // ex: heures
+  updatedAt   DateTime @updatedAt
+
+  @@map("parametres")
+}
+
+// ============================================================
 // RÉSERVATIONS
 // Mode de tarification au choix (nuitée ou horaire), lié à un Séjour
 // (occupation réelle, check-in/check-out)
@@ -188,6 +271,9 @@ model Reservation {
   paiements        Paiement[]
   sejour           Sejour?
 
+  creePar          Utilisateur?      @relation("ReservationCreeePar", fields: [creeParId], references: [id])
+  creeParId        Int?
+
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
@@ -209,6 +295,11 @@ model Sejour {
 
   consommations         Consommation[]
   heuresSupplementaires HeureSupplementaire[]
+
+  checkInPar            Utilisateur?          @relation("SejourCheckInPar", fields: [checkInParId], references: [id])
+  checkInParId          Int?
+  checkOutPar           Utilisateur?          @relation("SejourCheckOutPar", fields: [checkOutParId], references: [id])
+  checkOutParId         Int?
 
   createdAt             DateTime              @default(now())
 
@@ -311,6 +402,9 @@ model Paiement {
 
   facture           Facture?
 
+  encaissePar       Utilisateur? @relation("PaiementEncaissePar", fields: [encaisseParId], references: [id])
+  encaisseParId     Int?
+
   @@map("paiements")
 }
 
@@ -337,7 +431,8 @@ model Caisse {
   dateOuverture  DateTime          @default(now())
   dateFermeture  DateTime?
   soldeInitial   Decimal           @db.Decimal(10, 2)
-  soldeFinal     Decimal?          @db.Decimal(10, 2)
+  soldeFinal     Decimal?          @db.Decimal(10, 2) // théorique, recalculé depuis les mouvements
+  montantCompte  Decimal?          @db.Decimal(10, 2) // réellement compté dans le tiroir à la fermeture
   ouverte        Boolean           @default(true)
 
   utilisateur    Utilisateur       @relation(fields: [utilisateurId], references: [id])
@@ -357,6 +452,9 @@ model MouvementCaisse {
 
   caisse         Caisse        @relation(fields: [caisseId], references: [id])
   caisseId       Int
+
+  creePar        Utilisateur?  @relation("MouvementCreePar", fields: [creeParId], references: [id])
+  creeParId      Int?
 
   @@map("mouvements_caisse")
 }

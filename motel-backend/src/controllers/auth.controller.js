@@ -18,7 +18,7 @@ export async function connexionUtilisateur(req, res) {
     });
 
     // Message volontairement identique dans les deux cas (email inconnu / mdp faux)
-    // pour ne pas révéler si un email existe en base — bonne pratique de sécurité
+    // pour ne pas révéler si un email existe en base, bonne pratique de sécurité
     if (!utilisateur || !utilisateur.actif) {
       return res.status(401).json({ message: 'Identifiants incorrects' });
     }
@@ -28,7 +28,8 @@ export async function connexionUtilisateur(req, res) {
       return res.status(401).json({ message: 'Identifiants incorrects' });
     }
 
-    const roles = utilisateur.roles.map((r) => r.role.libelle);
+    // Le jeton porte les codes, pas les libellés : renommer un rôle ne casse rien.
+    const roles = utilisateur.roles.map((r) => r.role.code);
 
     const token = jwt.sign(
       { id: utilisateur.id, email: utilisateur.email, type: 'utilisateur', roles },
@@ -106,7 +107,7 @@ export async function getMonProfil(req, res) {
   }
 }
 
-// PATCH /api/auth/moi — modifie ses propres infos de base (pas email/mot de passe)
+// PATCH /api/auth/moi : modifie ses propres infos de base (pas email/mot de passe)
 export async function modifierMonProfil(req, res) {
   try {
     const { nom, prenom, telephone } = req.body;

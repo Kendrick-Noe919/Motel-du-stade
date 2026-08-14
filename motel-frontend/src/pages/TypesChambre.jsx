@@ -17,6 +17,9 @@ export default function TypesChambre() {
   const [prixParNuit, setPrixParNuit] = useState('');
   const [capacite, setCapacite] = useState('');
   const [description, setDescription] = useState('');
+  const [prixPremiereHeure, setPrixPremiereHeure] = useState('');
+  const [prixHeureSupplementaire, setPrixHeureSupplementaire] = useState('');
+  const [promo, setPromo] = useState('');
   const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
   const [erreurFormulaire, setErreurFormulaire] = useState('');
 
@@ -39,6 +42,7 @@ export default function TypesChambre() {
   function ouvrirCreation() {
     setTypeEnEdition(null);
     setLibelle(''); setPrixParNuit(''); setCapacite(''); setDescription('');
+    setPrixPremiereHeure(''); setPrixHeureSupplementaire(''); setPromo('');
     setErreurFormulaire('');
     setModalOuverte(true);
   }
@@ -49,6 +53,9 @@ export default function TypesChambre() {
     setPrixParNuit(String(type.prixParNuit));
     setCapacite(String(type.capacite));
     setDescription(type.description || '');
+    setPrixPremiereHeure(type.prixPremiereHeure != null ? String(type.prixPremiereHeure) : '');
+    setPrixHeureSupplementaire(type.prixHeureSupplementaire != null ? String(type.prixHeureSupplementaire) : '');
+    setPromo(type.promo != null ? String(type.promo) : '');
     setErreurFormulaire('');
     setModalOuverte(true);
   }
@@ -63,7 +70,16 @@ export default function TypesChambre() {
     setErreurFormulaire('');
     setEnregistrementEnCours(true);
     try {
-      const payload = { libelle, prixParNuit: Number(prixParNuit), capacite: Number(capacite), description };
+      const payload = {
+        libelle,
+        prixParNuit: Number(prixParNuit),
+        capacite: Number(capacite),
+        description,
+        prixPremiereHeure: Number(prixPremiereHeure),
+        // Vide = on facture l'heure supplémentaire au prix de la première
+        prixHeureSupplementaire: prixHeureSupplementaire === '' ? Number(prixPremiereHeure) : Number(prixHeureSupplementaire),
+        promo: promo === '' ? null : Number(promo),
+      };
       if (typeEnEdition) {
         await modifierTypeChambre(typeEnEdition.id, payload);
       } else {
@@ -128,6 +144,29 @@ export default function TypesChambre() {
                 {type.prixParNuit} <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--slate)' }}>/ nuit</span>
               </p>
 
+              {/* Les deux tarifications sont visibles côte à côte : c'est la première
+                  chose qu'on vient vérifier sur cet écran. */}
+              <p className="mono" style={{ fontSize: 15, fontWeight: 600, color: 'var(--moss)', margin: '0 0 4px' }}>
+                {type.prixPremiereHeure ?? '-'} <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--slate)' }}>/ 1re heure</span>
+                {type.prixHeureSupplementaire != null && Number(type.prixHeureSupplementaire) !== Number(type.prixPremiereHeure) && (
+                  <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--slate)' }}>
+                    {' '}puis {type.prixHeureSupplementaire}
+                  </span>
+                )}
+              </p>
+
+              {type.prixPremiereHeure == null && (
+                <p style={{ fontSize: 12, color: 'var(--danger)', margin: '0 0 4px', fontWeight: 500 }}>
+                  Tarif horaire absent : la réservation à l'heure échouera sur ce type.
+                </p>
+              )}
+
+              {type.promo != null && Number(type.promo) > 0 && (
+                <p style={{ fontSize: 12, color: 'var(--warning)', margin: '0 0 4px', fontWeight: 600 }}>
+                  Remise permanente de {type.promo} %
+                </p>
+              )}
+
               <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '4px 0 12px' }}>
                 Capacité : {type.capacite} personne{type.capacite > 1 ? 's' : ''}
               </p>
@@ -164,6 +203,40 @@ export default function TypesChambre() {
               <input type="number" min="1" value={capacite} onChange={(e) => setCapacite(e.target.value)} required style={styleInput} {...focusHandlers} />
             </Champ>
           </div>
+
+          {/* Le tarif horaire est indispensable : sans lui, toute réservation à l'heure
+              sur ce type échoue au calcul du montant. */}
+          <div className="grille-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+            <Champ label="Prix de la première heure">
+              <input
+                type="number" step="0.01" min="1" required
+                value={prixPremiereHeure}
+                onChange={(e) => setPrixPremiereHeure(e.target.value)}
+                style={styleInput} {...focusHandlers} placeholder="ex: 5000"
+              />
+            </Champ>
+            <Champ label="Prix de l'heure supplémentaire">
+              <input
+                type="number" step="0.01" min="0"
+                value={prixHeureSupplementaire}
+                onChange={(e) => setPrixHeureSupplementaire(e.target.value)}
+                style={styleInput} {...focusHandlers}
+                placeholder={prixPremiereHeure || 'identique à la première'}
+              />
+            </Champ>
+          </div>
+          <p style={{ fontSize: 12, color: 'var(--slate)', margin: '-8px 0 0' }}>
+            Laissée vide, l'heure supplémentaire est facturée au prix de la première.
+          </p>
+
+          <Champ label="Remise permanente (optionnel)">
+            <input
+              type="number" step="0.01" min="0" max="100"
+              value={promo}
+              onChange={(e) => setPromo(e.target.value)}
+              style={styleInput} {...focusHandlers} placeholder="en %, ex: 10"
+            />
+          </Champ>
 
           <Champ label="Description (optionnel)">
             <textarea

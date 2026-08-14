@@ -1,7 +1,11 @@
 import { useState, useEffect } from 'react';
-import { getUtilisateurs, creerUtilisateur, modifierUtilisateur, attribuerRole, retirerRole } from '../services/utilisateur.service';
+import {
+  getUtilisateurs, creerUtilisateur, modifierUtilisateur, attribuerRole, retirerRole,
+  verifierSuppression, telechargerArchive, supprimerUtilisateur,
+} from '../services/utilisateur.service';
 import { getRoles } from '../services/role.service';
 import Button from '../components/ui/Button';
+import Alerte from '../components/ui/Alerte';
 import Champ, { styleInput } from '../components/ui/Champ';
 import Carte from '../components/ui/Carte';
 import Modal from '../components/ui/Modal';
@@ -11,6 +15,7 @@ export default function Utilisateurs() {
   const [utilisateurs, setUtilisateurs] = useState([]);
   const [roles, setRoles] = useState([]);
   const [chargement, setChargement] = useState(true);
+  const [ongletArchives, setOngletArchives] = useState(false);
   const [erreur, setErreur] = useState('');
   const [succes, setSucces] = useState('');
 
@@ -25,6 +30,11 @@ export default function Utilisateurs() {
   const [erreurFormulaire, setErreurFormulaire] = useState('');
 
   const [nouveauRoleParUtilisateur, setNouveauRoleParUtilisateur] = useState({});
+
+  const [compteASupprimer, setCompteASupprimer] = useState(null);
+  const [archiveTelechargee, setArchiveTelechargee] = useState(false);
+  const [telechargementEnCours, setTelechargementEnCours] = useState(false);
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false);
 
   useEffect(() => { chargerDonnees(); }, []);
 
@@ -96,9 +106,56 @@ export default function Utilisateurs() {
       setErreur(err.response?.data?.message || 'Erreur lors du retrait');
     }
   }
- async function supprimerUtilisateur(id) {
-  await api.delete(`/utilisateurs/${id}`);
-}
+  // ---------- Suppression d'un compte archivé ----------
+  //
+  // On télécharge le dossier avant d'effacer : c'est la seule copie qui restera.
+  // Le serveur refuse de son côté tout compte ayant tenu une caisse ou vendu au
+  // bar — ces recettes ne peuvent pas disparaître avec la personne.
+  async function ouvrirSuppression(u) {
+    setErreur('');
+    setCompteASupprimer({ ...u, inventaire: null });
+    setArchiveTelechargee(false);
+    try {
+      setCompteASupprimer({ ...u, inventaire: await verifierSuppression(u.id) });
+    } catch (err) {
+      setErreur('Impossible de vérifier ce compte');
+      setCompteASupprimer(null);
+    }
+  }
+
+  async function handleTelechargerArchive() {
+    const u = compteASupprimer;
+    setTelechargementEnCours(true);
+    try {
+      const nom = `archive-${u.prenom}-${u.nom}-${u.id}.json`.toLowerCase().replace(/[^a-z0-9.-]+/g, '-');
+      await telechargerArchive(u.id, nom);
+      setArchiveTelechargee(true);
+    } catch (err) {
+      setErreur('Impossible de télécharger l\'archive');
+    } finally {
+      setTelechargementEnCours(false);
+    }
+  }
+
+  async function handleConfirmerSuppression() {
+    setSuppressionEnCours(true);
+    try {
+      const { message } = await supprimerUtilisateur(compteASupprimer.id);
+      setCompteASupprimer(null);
+      setSucces(message);
+      await chargerDonnees();
+    } catch (err) {
+      setErreur(err.response?.data?.message || 'Suppression impossible');
+      setCompteASupprimer(null);
+    } finally {
+      setSuppressionEnCours(false);
+    }
+  }
+
+  const actifs = utilisateurs.filter((u) => u.actif);
+  const archives = utilisateurs.filter((u) => !u.actif);
+  const listeAffichee = ongletArchives ? archives : actifs;
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-5)' }}>
@@ -110,6 +167,27 @@ export default function Utilisateurs() {
       </div>
 
        {erreur && <Alerte variante="erreur">{erreur}</Alerte>}
+
+      <div style={{ display: 'flex', gap: 6, marginBottom: 'var(--space-4)' }}>
+        {[
+          { cle: false, label: `En activité (${actifs.length})` },
+          { cle: true, label: `Archivés (${archives.length})` },
+        ].map(({ cle, label }) => (
+          <button
+            key={String(cle)}
+            onClick={() => setOngletArchives(cle)}
+            style={{
+              padding: '7px 14px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13,
+              fontWeight: ongletArchives === cle ? 600 : 500,
+              border: `1px solid ${ongletArchives === cle ? 'var(--moss)' : 'var(--line)'}`,
+              background: ongletArchives === cle ? 'var(--moss)' : 'transparent',
+              color: ongletArchives === cle ? '#fff' : 'var(--slate)',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {chargement ? (
         <p style={{ color: 'var(--slate)' }}>Chargement...</p>
@@ -124,7 +202,7 @@ export default function Utilisateurs() {
               </tr>
             </thead>
             <tbody>
-              {utilisateurs.map((u) => {
+              {listeAffichee.map((u) => {
                 const rolesDisponibles = roles.filter((r) => !u.roles.some((ur) => ur.id === r.id));
                 return (
                   <tr key={u.id} style={{ borderBottom: '1px solid var(--line)' }}>
@@ -161,17 +239,39 @@ export default function Utilisateurs() {
                       )}
                     </td>
                     <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
-                      <button
-                        onClick={() => handleToggleActif(u)}
-                        style={{
-                          background: u.actif ? 'var(--success-bg)' : 'var(--danger-bg)',
-                          color: u.actif ? 'var(--success)' : 'var(--danger)',
-                          border: 'none', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-                          fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 500,
-                        }}
-                      >
-                        {u.actif ? 'Actif' : 'Inactif'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                        <button
+                          onClick={() => handleToggleActif(u)}
+                          title={u.actif
+                            ? 'Archiver ce compte : il ne pourra plus se connecter, son historique est conservé'
+                            : 'Réactiver ce compte'}
+                          style={{
+                            background: u.actif ? 'var(--success-bg)' : 'var(--stone-dim)',
+                            color: u.actif ? 'var(--success)' : 'var(--slate)',
+                            border: 'none', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                            fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 500,
+                          }}
+                        >
+                          {u.actif ? 'Archiver' : 'Réactiver'}
+                        </button>
+
+                        {/* La suppression n'est offerte qu'aux comptes déjà archivés :
+                            l'archivage laisse le temps de constater qu'un compte
+                            désactivé ne manque à personne. */}
+                        {!u.actif && (
+                          <button
+                            onClick={() => ouvrirSuppression(u)}
+                            title="Télécharger le dossier de ce compte, puis le supprimer définitivement"
+                            style={{
+                              background: 'var(--danger-bg)', color: 'var(--danger)',
+                              border: 'none', padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
+                              fontSize: 11, fontFamily: 'var(--font-mono)', fontWeight: 500,
+                            }}
+                          >
+                            Supprimer
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -223,6 +323,90 @@ export default function Utilisateurs() {
             <Button type="submit" enCours={creationEnCours} disabled={roleIdsSelectionnes.length === 0}>Créer l'utilisateur</Button>
           </div>
         </form>
+      </Modal>
+
+      {/* ---------- Suppression définitive : archive d'abord ---------- */}
+      <Modal
+        ouvert={!!compteASupprimer}
+        onFermer={() => setCompteASupprimer(null)}
+        titre="Supprimer définitivement ce compte"
+        largeur={460}
+      >
+        {compteASupprimer && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+            <p style={{ fontSize: 13.5, color: 'var(--slate)', margin: 0 }}>
+              <strong style={{ color: 'var(--ink)' }}>{compteASupprimer.prenom} {compteASupprimer.nom}</strong>
+              {' · '}<span className="mono">{compteASupprimer.email}</span>
+            </p>
+
+            {!compteASupprimer.inventaire ? (
+              <p style={{ fontSize: 13, color: 'var(--slate)', margin: 0 }}>Vérification du compte...</p>
+            ) : !compteASupprimer.inventaire.estSupprimable ? (
+              <div style={{ background: 'var(--danger-bg)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-4)', fontSize: 13 }}>
+                <p style={{ margin: '0 0 8px', fontWeight: 600, color: 'var(--danger)' }}>Ce compte ne peut pas être supprimé</p>
+                <p style={{ margin: '0 0 10px', color: 'var(--slate)' }}>
+                  Il porte {compteASupprimer.inventaire.bloquant.caisses > 0 && `${compteASupprimer.inventaire.bloquant.caisses} caisse(s) tenue(s)`}
+                  {compteASupprimer.inventaire.bloquant.caisses > 0 && compteASupprimer.inventaire.bloquant.ventes > 0 && ' et '}
+                  {compteASupprimer.inventaire.bloquant.ventes > 0 && `${compteASupprimer.inventaire.bloquant.ventes} vente(s) au bar`}.
+                  Les effacer supprimerait des recettes réelles et rendrait la comptabilité invérifiable.
+                </p>
+                <p style={{ margin: 0, color: 'var(--slate)' }}>
+                  Le compte reste archivé : il n'a plus aucun accès à l'application.
+                  Vous pouvez tout de même télécharger son dossier.
+                </p>
+              </div>
+            ) : (
+              <div style={{ background: 'var(--stone)', borderRadius: 'var(--radius-sm)', padding: 'var(--space-4)', fontSize: 13 }}>
+                <p style={{ margin: '0 0 8px', color: 'var(--slate)' }}>Ce que la suppression détachera, sans le détruire :</p>
+                {[
+                  ['Encaissements', compteASupprimer.inventaire.detachable.paiements],
+                  ['Réservations créées', compteASupprimer.inventaire.detachable.reservations],
+                  ['Arrivées enregistrées', compteASupprimer.inventaire.detachable.checkIns],
+                  ['Départs enregistrés', compteASupprimer.inventaire.detachable.checkOuts],
+                  ['Lignes de journal', compteASupprimer.inventaire.detachable.operations],
+                ].filter(([, n]) => n > 0).map(([label, n]) => (
+                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
+                    <span style={{ color: 'var(--slate)' }}>{label}</span>
+                    <span className="mono">{n}</span>
+                  </div>
+                ))}
+                <p style={{ margin: '10px 0 0', color: 'var(--slate-light)', fontSize: 12 }}>
+                  Ces opérations restent en base et gardent leur valeur comptable ; elles
+                  perdent seulement le nom de leur auteur.
+                </p>
+              </div>
+            )}
+
+            <Button
+              variante="secondaire"
+              onClick={handleTelechargerArchive}
+              enCours={telechargementEnCours}
+              style={{ width: '100%', justifyContent: 'center' }}
+            >
+              {archiveTelechargee ? 'Archive téléchargée — retélécharger' : '1. Télécharger l\'archive (JSON)'}
+            </Button>
+
+            {compteASupprimer.inventaire?.estSupprimable && (
+              <>
+                <p style={{ fontSize: 12, color: 'var(--slate-light)', margin: 0 }}>
+                  La suppression est irréversible. Le bouton s'active une fois l'archive
+                  enregistrée sur votre poste.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+                  <Button variante="secondaire" onClick={() => setCompteASupprimer(null)}>Annuler</Button>
+                  <Button
+                    variante="danger"
+                    disabled={!archiveTelechargee}
+                    enCours={suppressionEnCours}
+                    onClick={handleConfirmerSuppression}
+                  >
+                    2. Supprimer définitivement
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

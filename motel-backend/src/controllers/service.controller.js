@@ -1,4 +1,7 @@
 import prisma from '../utils/prisma.js';
+import { tracer } from '../utils/journal.js';
+import { notifier } from '../utils/notifications.js';
+import { BARMAN } from '../config/roles.js';
 
 
 const CATEGORIES_VALIDES = ['BLANCHISSERIE', 'RESTAURANT', 'MINIBAR', 'AUTRE'];
@@ -22,8 +25,28 @@ export async function createService(req, res) {
 
     const categorieFinale = CATEGORIES_VALIDES.includes(categorie) ? categorie : 'AUTRE';
 
-    const service = await prisma.service.create({
-      data: { nom, categorie: categorieFinale, prix: Number(prix), description },
+    const service = await prisma.$transaction(async (tx) => {
+      const cree = await tx.service.create({
+        data: { nom, categorie: categorieFinale, prix: Number(prix), description },
+      });
+
+      await tracer(tx, req, {
+        action: 'SERVICE_CREE',
+        cibleType: 'service',
+        cibleId: cree.id,
+        resume: `${cree.nom} ajouté au menu (${cree.categorie}, ${cree.prix})`,
+      });
+
+      // Le barman vend ce qui est au menu : il doit voir arriver les nouveautés
+      await notifier(tx, {
+        type: 'SERVICE_AJOUTE',
+        titre: 'Nouvel article au menu',
+        message: `${cree.nom} (${cree.categorie}) est disponible à la vente à ${cree.prix}.`,
+        lien: '/ventes',
+        roleCible: BARMAN,
+      });
+
+      return cree;
     });
 
     res.status(201).json(service);

@@ -5,8 +5,9 @@ export async function getCaissesUtilisateur(utilisateurId) {
   return data;
 }
 
-export async function ouvrirCaisse(utilisateurId, soldeInitial) {
-  const { data } = await api.post('/caisses/ouvrir', { utilisateurId, soldeInitial });
+// On ouvre toujours sa propre caisse : le serveur prend l'utilisateur dans le jeton.
+export async function ouvrirCaisse(soldeInitial) {
+  const { data } = await api.post('/caisses/ouvrir', { soldeInitial });
   return data;
 }
 
@@ -20,7 +21,13 @@ export async function consulterSolde(caisseId) {
   return data;
 }
 
-export async function fermerCaisse(caisseId) {
-  const { data } = await api.patch(`/caisses/${caisseId}/fermer`);
+export async function fermerCaisse(caisseId, montantCompte) {
+  const { data } = await api.patch(`/caisses/${caisseId}/fermer`, { montantCompte });
+  return data;
+}
+
+// Vue consolidée de toutes les caisses ouvertes (Administrateur et Manager)
+export async function getCaissesOuvertes() {
+  const { data } = await api.get('/caisses');
   return data;
 }

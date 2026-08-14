@@ -1,29 +1,51 @@
 import { useState, useEffect } from 'react';
 import { getServices } from '../services/service.service';
-import { creerVente, getVentes } from '../services/vente.service';
+import {
+  creerVente, getVentes, getChambresOccupees, envoyerSurChambre, getConsommationsSurChambre,
+} from '../services/vente.service';
 import Button from '../components/ui/Button';
 import Carte from '../components/ui/Carte';
 import Alerte from '../components/ui/Alerte';
+import Champ, { styleInput } from '../components/ui/Champ';
 
 const CATEGORIES_BAR = ['RESTAURANT', 'MINIBAR'];
+
+// Une nuitée se lit en jours, un séjour horaire à l'heure près : afficher « 14/08 »
+// à un client parti à 18h ne dirait rien au barman.
+function formaterDepart(chambre) {
+  const depart = new Date(chambre.dateDepart);
+  return chambre.modeTarification === 'HORAIRE'
+    ? depart.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : depart.toLocaleDateString('fr-FR');
+}
 
 export default function Ventes() {
   const [services, setServices] = useState([]);
   const [historique, setHistorique] = useState([]);
+  const [chambresOccupees, setChambresOccupees] = useState([]);
+  const [surChambre, setSurChambre] = useState([]);
   const [panier, setPanier] = useState([]); // [{ serviceId, nom, prix, quantite }]
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState('');
   const [succes, setSucces] = useState('');
   const [encaissementEnCours, setEncaissementEnCours] = useState(false);
+  // Au bar on ne paie pas forcément tout de suite : un client logé fait porter
+  // sa commande sur sa chambre et règle au départ.
+  const [reglement, setReglement] = useState('IMMEDIAT'); // IMMEDIAT | SUR_CHAMBRE
+  const [sejourChoisi, setSejourChoisi] = useState('');
 
   useEffect(() => { chargerDonnees(); }, []);
 
   async function chargerDonnees() {
     try {
       setChargement(true);
-      const [servicesData, ventesData] = await Promise.all([getServices(), getVentes()]);
+      const [servicesData, ventesData, chambresData, surChambreData] = await Promise.all([
+        getServices(), getVentes(), getChambresOccupees(), getConsommationsSurChambre(),
+      ]);
       setServices(servicesData.filter((s) => CATEGORIES_BAR.includes(s.categorie)));
       setHistorique(ventesData.slice(0, 10));
+      setChambresOccupees(chambresData);
+      setSurChambre(surChambreData);
     } catch (err) {
       setErreur('Impossible de charger le menu');
     } finally {
@@ -54,17 +76,26 @@ export default function Ventes() {
   }
 
   const total = panier.reduce((s, l) => s + l.prix * l.quantite, 0);
+  const chambreChoisie = chambresOccupees.find((c) => c.sejourId === Number(sejourChoisi));
 
-  async function handleEncaisser() {
+  async function handleValider() {
     setErreur(''); setSucces('');
     setEncaissementEnCours(true);
+    const lignes = panier.map((l) => ({ serviceId: l.serviceId, quantite: l.quantite }));
     try {
-      await creerVente(panier.map((l) => ({ serviceId: l.serviceId, quantite: l.quantite })));
-      setSucces(`Vente encaissée : ${total.toFixed(2)}`);
+      if (reglement === 'SUR_CHAMBRE') {
+        const { chambreNumero, client } = await envoyerSurChambre(Number(sejourChoisi), lignes);
+        setSucces(`${total.toFixed(2)} porté sur la note de la chambre ${chambreNumero} (${client}). Réglé au départ du client.`);
+        setSejourChoisi('');
+        setReglement('IMMEDIAT');
+      } else {
+        await creerVente(lignes);
+        setSucces(`Vente encaissée : ${total.toFixed(2)}`);
+      }
       setPanier([]);
       await chargerDonnees();
     } catch (err) {
-      setErreur(err.response?.data?.message || 'Erreur lors de l\'encaissement');
+      setErreur(err.response?.data?.message || 'Erreur lors de l\'enregistrement');
     } finally {
       setEncaissementEnCours(false);
     }
@@ -74,8 +105,11 @@ export default function Ventes() {
 
   return (
     <div>
-      <h1 style={{ marginBottom: 'var(--space-1)' }}>Point de vente — Bar / Restaurant</h1>
-      <p style={{ color: 'var(--slate)', fontSize: 13, marginBottom: 'var(--space-5)' }}>Sélectionnez les articles vendus, puis encaissez.</p>
+      <h1 style={{ marginBottom: 'var(--space-1)' }}>Point de vente Bar / Restaurant</h1>
+      <p style={{ color: 'var(--slate)', fontSize: 13, marginBottom: 'var(--space-5)' }}>
+        Sélectionnez les articles, puis encaissez au comptoir ou portez la commande
+        sur la note d'un client logé.
+      </p>
 
       {erreur && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="erreur">{erreur}</Alerte></div>}
       {succes && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="succes">{succes}</Alerte></div>}
@@ -138,14 +172,125 @@ export default function Ventes() {
             <span className="mono">{total.toFixed(2)}</span>
           </div>
 
-          <Button onClick={handleEncaisser} disabled={panier.length === 0} enCours={encaissementEnCours} style={{ width: '100%', justifyContent: 'center' }}>
-            Encaisser
+          {/* ---------- Règlement : maintenant, ou sur la note de la chambre ----------
+              Un client de passage paie au comptoir ; un client logé consomme et règle
+              au départ. L'écran n'offrait que le premier cas. */}
+          <p style={{ fontSize: 12, color: 'var(--slate)', marginBottom: 8, fontWeight: 500 }}>Règlement</p>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 'var(--space-4)' }}>
+            {[
+              { cle: 'IMMEDIAT', label: 'Payé maintenant' },
+              { cle: 'SUR_CHAMBRE', label: 'Sur une chambre' },
+            ].map(({ cle, label }) => {
+              const actif = reglement === cle;
+              const indisponible = cle === 'SUR_CHAMBRE' && chambresOccupees.length === 0;
+              return (
+                <button
+                  key={cle}
+                  type="button"
+                  disabled={indisponible}
+                  onClick={() => setReglement(cle)}
+                  title={indisponible ? 'Aucun client logé actuellement' : undefined}
+                  style={{
+                    flex: 1,
+                    background: actif ? 'var(--moss)' : 'var(--surface)',
+                    color: indisponible ? 'var(--slate-light)' : actif ? '#fff' : 'var(--slate)',
+                    border: `1px solid ${actif ? 'var(--moss)' : 'var(--line)'}`,
+                    borderRadius: 'var(--radius-sm)', padding: '8px 10px',
+                    fontSize: 12.5, fontWeight: actif ? 600 : 500,
+                    cursor: indisponible ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {reglement === 'SUR_CHAMBRE' && (
+            <div style={{ marginBottom: 'var(--space-4)' }}>
+              <Champ label="Client logé">
+                <select value={sejourChoisi} onChange={(e) => setSejourChoisi(e.target.value)} style={styleInput}>
+                  <option value="">-- Choisir la chambre --</option>
+                  {chambresOccupees.map((c) => (
+                    <option key={c.sejourId} value={c.sejourId}>
+                      Chambre {c.chambreNumero} · {c.client} · départ {formaterDepart(c)}
+                      {c.departDepasse ? ' (dépassé)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </Champ>
+
+              {/* Le départ prévu, en clair : porter une tournée sur une chambre dont
+                  le départ est passé, c'est risquer de facturer un client déjà parti. */}
+              {chambreChoisie && (
+                <p style={{
+                  fontSize: 12.5, fontWeight: 500, margin: '8px 0 0',
+                  padding: 'var(--space-3)', borderRadius: 'var(--radius-sm)',
+                  color: chambreChoisie.departDepasse ? 'var(--danger)' : 'var(--slate)',
+                  background: chambreChoisie.departDepasse ? 'var(--danger-bg)' : 'var(--stone)',
+                }}>
+                  {chambreChoisie.departDepasse
+                    ? `Départ prévu le ${formaterDepart(chambreChoisie)} : il est dépassé. Vérifiez que le client est toujours dans l'établissement.`
+                    : `Départ prévu le ${formaterDepart(chambreChoisie)}. Le client est encore dans l'établissement.`}
+                </p>
+              )}
+
+              <p style={{ fontSize: 12, color: 'var(--slate-light)', margin: '8px 0 0' }}>
+                Rien n'est encaissé maintenant : le montant s'ajoute à la note du client
+                et sera réglé à son départ.
+              </p>
+            </div>
+          )}
+
+          <Button
+            onClick={handleValider}
+            disabled={panier.length === 0 || (reglement === 'SUR_CHAMBRE' && !sejourChoisi)}
+            enCours={encaissementEnCours}
+            style={{ width: '100%', justifyContent: 'center' }}
+          >
+            {reglement === 'SUR_CHAMBRE' ? 'Mettre sur la note' : 'Encaisser'}
           </Button>
         </Carte>
       </div>
 
+      {/* ---------- Commandes portées sur des notes ----------
+          Elles n'entrent pas dans l'historique des ventes : rien n'a été encaissé
+          au bar, le montant attend le départ du client. */}
+      {surChambre.length > 0 && (
+        <>
+          <h3 style={{ margin: 'var(--space-6) 0 var(--space-3)' }}>Dernières commandes sur chambre</h3>
+          <Carte padding="0">
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
+                    {['Date', 'Chambre', 'Client', 'Article', 'Montant', 'État'].map((h) => (
+                      <th key={h} style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12, color: 'var(--slate)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {surChambre.map((c) => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                      <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: 'var(--slate)', whiteSpace: 'nowrap' }}>{new Date(c.dateConsommation).toLocaleString('fr-FR')}</td>
+                      <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13 }}>N°{c.chambreNumero}</td>
+                      <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13 }}>{c.client}</td>
+                      <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{c.service} ×{c.quantite}</td>
+                      <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, fontWeight: 500 }}>{c.montant}</td>
+                      <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: c.reglee ? 'var(--success)' : 'var(--warning)', fontWeight: 500 }}>
+                        {c.reglee ? 'Réglée au départ' : 'En attente du départ'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Carte>
+        </>
+      )}
+
       {/* ---------- Historique récent ---------- */}
-      <h3 style={{ margin: 'var(--space-6) 0 var(--space-3)' }}>Dernières ventes</h3>
+      <h3 style={{ margin: 'var(--space-6) 0 var(--space-3)' }}>Dernières ventes encaissées</h3>
       {historique.length === 0 ? (
         <p style={{ color: 'var(--slate)', fontSize: 13 }}>Aucune vente enregistrée.</p>
       ) : (

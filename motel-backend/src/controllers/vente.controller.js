@@ -1,6 +1,9 @@
 import prisma from '../utils/prisma.js';
+import { exigerCaisseOuverte } from './caisse.controller.js';
+import { estSuperviseur } from '../middlewares/auth.middleware.js';
+import { tracer } from '../utils/journal.js';
 
-// POST /api/ventes — body: { lignes: [{ serviceId, quantite }] }
+// POST /api/ventes, body: { lignes: [{ serviceId, quantite }] }
 export async function creerVente(req, res) {
   try {
     const { lignes } = req.body;
@@ -10,6 +13,9 @@ export async function creerVente(req, res) {
     }
 
     const resultat = await prisma.$transaction(async (tx) => {
+      // Le barman doit avoir ouvert sa caisse avant de vendre
+      const caisse = await exigerCaisseOuverte(tx, req.user.id);
+
       let montantTotal = 0;
       const lignesAvecPrix = [];
 
@@ -33,20 +39,14 @@ export async function creerVente(req, res) {
         include: { lignes: { include: { service: true } } },
       });
 
-      // ---------- Encaissement automatique dans la caisse du barman (même logique que le Chapitre 36) ----------
-      let caisse = await tx.caisse.findFirst({ where: { utilisateurId: req.user.id, ouverte: true } });
-      if (!caisse) {
-        caisse = await tx.caisse.create({
-          data: { utilisateur: { connect: { id: req.user.id } }, soldeInitial: 0, ouverte: true },
-        });
-      }
-
+      // ---------- Encaissement dans la caisse ouverte du barman ----------
       await tx.mouvementCaisse.create({
         data: {
           caisse: { connect: { id: caisse.id } },
           type: 'ENTREE',
           montant: montantTotal,
-          motif: `Vente bar #${vente.id} — ${vente.lignes.length} article(s)`,
+          motif: `Vente bar #${vente.id} · ${vente.lignes.length} article(s)`,
+          creePar: { connect: { id: req.user.id } },
         },
       });
 
@@ -55,16 +55,149 @@ export async function creerVente(req, res) {
 
     res.status(201).json(resultat);
   } catch (error) {
+    if (error.statut) return res.status(error.statut).json({ message: error.message });
     console.error(error);
     res.status(500).json({ message: 'Erreur serveur', error: error.message });
   }
 }
 
-// GET /api/ventes — historique (Administrateur voit tout, Barman voit les siennes)
+// GET /api/ventes/chambres-occupees
+//
+// Les clients auxquels le barman peut porter une consommation : ceux qui sont
+// effectivement dans une chambre. Sans cette liste, le bar n'a aucun moyen de
+// désigner une note ouverte.
+export async function getChambresOccupees(req, res) {
+  try {
+    const sejours = await prisma.sejour.findMany({
+      where: { dateSortie: null },
+      include: { reservation: { include: { client: true, chambre: true } } },
+    });
+
+    const lignes = sejours
+      .map((s) => ({
+        sejourId: s.id,
+        chambreNumero: s.reservation.chambre.numero,
+        client: `${s.reservation.client.prenom || ''} ${s.reservation.client.nom || ''}`.trim()
+             || s.reservation.client.telephone,
+        // Le barman doit voir jusqu'à quand le client est censé être là : un départ
+        // dépassé signale une note qu'on s'apprête peut-être à charger alors que
+        // le client a déjà quitté les lieux.
+        dateDepart: s.reservation.dateDepart,
+        modeTarification: s.reservation.modeTarification,
+        departDepasse: new Date(s.reservation.dateDepart) < new Date(),
+      }))
+      .sort((a, b) => String(a.chambreNumero).localeCompare(String(b.chambreNumero)));
+
+    res.json(lignes);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+}
+
+// POST /api/ventes/sur-chambre, body: { sejourId, lignes: [{ serviceId, quantite }] }
+//
+// Au bar on consomme d'abord et on paie ensuite : la commande d'un client logé
+// part sur sa note de chambre et sera réglée au départ. Aucun mouvement de caisse
+// ici — rien n'est encaissé maintenant, l'argent entrera au check-out.
+export async function envoyerSurChambre(req, res) {
+  try {
+    const { sejourId, lignes } = req.body;
+
+    if (!sejourId) return res.status(400).json({ message: 'sejourId est requis' });
+    if (!Array.isArray(lignes) || lignes.length === 0) {
+      return res.status(400).json({ message: 'Au moins une ligne (serviceId, quantite) est requise' });
+    }
+
+    const sejour = await prisma.sejour.findUnique({
+      where: { id: Number(sejourId) },
+      include: { reservation: { include: { chambre: true, client: true } } },
+    });
+
+    if (!sejour) return res.status(404).json({ message: 'Séjour non trouvé' });
+    if (sejour.dateSortie) {
+      return res.status(400).json({ message: 'Ce client est déjà parti : sa note est clôturée.' });
+    }
+
+    const nomClient = `${sejour.reservation.client.prenom || ''} ${sejour.reservation.client.nom || ''}`.trim()
+                   || sejour.reservation.client.telephone;
+
+    const resultat = await prisma.$transaction(async (tx) => {
+      let montantTotal = 0;
+
+      for (const ligne of lignes) {
+        const service = await tx.service.findUnique({ where: { id: Number(ligne.serviceId) } });
+        if (!service) throw new Error(`Service introuvable (id ${ligne.serviceId})`);
+
+        const quantite = Number(ligne.quantite) || 1;
+        montantTotal += Number(service.prix) * quantite;
+
+        await tx.consommation.create({
+          data: {
+            sejour: { connect: { id: sejour.id } },
+            service: { connect: { id: service.id } },
+            quantite,
+            prixApplique: service.prix, // le prix est figé au moment de la commande
+          },
+        });
+      }
+
+      await tracer(tx, req, {
+        action: 'CONSOMMATION_SUR_CHAMBRE',
+        cibleType: 'reservation',
+        cibleId: sejour.reservationId,
+        resume: `${lignes.length} article(s) portés sur la chambre `
+              + `${sejour.reservation.chambre.numero} (${nomClient}) · ${montantTotal}`,
+      });
+
+      return { montantTotal, chambreNumero: sejour.reservation.chambre.numero, client: nomClient };
+    });
+
+    res.status(201).json(resultat);
+  } catch (error) {
+    if (error.statut) return res.status(error.statut).json({ message: error.message });
+    console.error(error);
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+}
+
+// GET /api/ventes/sur-chambre : les dernières commandes portées sur des notes.
+//
+// Elles n'apparaissent pas dans l'historique des ventes — rien n'a été encaissé —
+// mais le barman doit pouvoir vérifier ce qu'il a envoyé sur quelle chambre.
+export async function getConsommationsSurChambre(req, res) {
+  try {
+    const consommations = await prisma.consommation.findMany({
+      include: {
+        service: true,
+        sejour: { include: { reservation: { include: { chambre: true, client: true } } } },
+      },
+      orderBy: { dateConsommation: 'desc' },
+      take: 15,
+    });
+
+    res.json(consommations.map((c) => ({
+      id: c.id,
+      dateConsommation: c.dateConsommation,
+      service: c.service.nom,
+      quantite: c.quantite,
+      montant: Number(c.prixApplique) * c.quantite,
+      chambreNumero: c.sejour.reservation.chambre.numero,
+      client: `${c.sejour.reservation.client.prenom || ''} ${c.sejour.reservation.client.nom || ''}`.trim()
+           || c.sejour.reservation.client.telephone,
+      reglee: c.sejour.dateSortie !== null,
+    })));
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erreur serveur', error: error.message });
+  }
+}
+
+// GET /api/ventes : historique. L'administrateur et le caissier voient tout
+// (contrôle de fin de journée), le barman voit les siennes.
 export async function getVentes(req, res) {
   try {
-    const estAdmin = req.user.roles.includes('Administrateur');
-    const where = estAdmin ? {} : { utilisateurId: req.user.id };
+    const where = estSuperviseur(req) ? {} : { utilisateurId: req.user.id };
 
     const ventes = await prisma.venteDirecte.findMany({
       where,

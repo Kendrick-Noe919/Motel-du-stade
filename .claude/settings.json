@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"c:/Users/abdou/Desktop/Gestion Auberge/Motel-du-stade/motel-backend\" && cat .env.example && echo \"--- .env \\(masqué\\) ---\" && sed -E 's/\\(PASSWORD|SECRET|URL\\)=.*/\\\\1=***/' .env)",
+      "Bash(cp \"C:/Users/abdou/AppData/Local/Temp/claude/c--Users-abdou-Desktop-Gestion-Auberge-Motel-du-stade/6e18dd59-1a34-417a-8862-382b2e673954/scratchpad/reparer-accents.mjs\" ./_reparer-accents.mjs)",
+      "Bash(node ./_reparer-accents.mjs)",
+      "Bash(rm -f ./_reparer-accents.mjs)",
+      "Bash(\"/c/xampp/mysql/bin/mysqldump.exe\" -h 127.0.0.1 -P 3306 -u root --default-character-set=utf8mb4 --single-transaction --routines --add-drop-table motel_db)",
+      "Bash(echo \"exit=$?\")",
+      "Read(//tmp/**)",
+      "Bash(xargs echo \"tables InnoDB :\")",
+      "Bash(xargs echo \"tables MyISAM :\")",
+      "Bash(xargs echo \"cles etrangeres :\")",
+      "Bash(xargs echo \"table journal_chambres :\")",
+      "Bash(xargs echo \"colonne montantCompte :\")",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('database/motel_db.sql','utf8'\\); console.log\\('longs tirets restants :', \\(s.match\\(/—/g\\)||[]\\).length\\); console.log\\('points d interrogation parasites :', \\(s.match\\(/\\\\?\\\\?/g\\)||[]\\).length\\);\")",
+      "Bash(rm -f motel-backend/_test-vague2.mjs motel-backend/_fusion-roles.mjs)",
+      "Bash(\"/c/xampp/mysql/bin/mysqldump.exe\" -h 127.0.0.1 -P 3306 -u root --default-character-set=utf8mb4 --single-transaction --add-drop-table motel_db)",
+      "Bash(xargs echo \"tables InnoDB:\")",
+      "Bash(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/health)",
+      "Bash(echo \"health: $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/health\\)\")",
+      "Bash(rm -f _test-vague2.mjs)",
+      "Bash(node -e ' *)",
+      "Bash(cd \"c:/Users/abdou/Desktop/Gestion Auberge/Motel-du-stade/motel-backend\" && ls src/ && grep -rn \"bcrypt\" src/controllers/utilisateur.controller.js | head -5 && sed -n '/^model Utilisateur/,/^}/p;/^model Role/,/^}/p;/^model UtilisateurRole/,/^}/p' prisma/schema.prisma)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\abdou\\Desktop\\Gestion Auberge\\Motel-du-stade\\motel-backend",
+      "C:\\Users\\abdou\\Desktop\\Gestion Auberge\\Motel-du-stade\\motel-frontend\\prisma"
+    ]
+  }
+}

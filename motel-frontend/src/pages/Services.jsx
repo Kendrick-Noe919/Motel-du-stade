@@ -6,6 +6,8 @@ import Carte from '../components/ui/Carte';
 import Modal from '../components/ui/Modal';
 import ModalConfirmation from '../components/ui/ModalConfirmation';
 import Alerte from '../components/ui/Alerte';
+import { useAuth } from '../context/AuthContext';
+import { aLeRole, SEUL_ADMIN } from '../config/acces';
 
 const CATEGORIES = [
   { valeur: 'RESTAURANT', label: 'Restaurant' },
@@ -17,6 +19,9 @@ const CATEGORIES = [
 const LABEL_CATEGORIE = Object.fromEntries(CATEGORIES.map((c) => [c.valeur, c.label]));
 
 export default function Services() {
+  const { utilisateur } = useAuth();
+  // Le menu et les prix relèvent de la direction : le barman vend ce qui y figure.
+  const peutGererLeMenu = aLeRole(utilisateur, SEUL_ADMIN);
   const [services, setServices] = useState([]);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState('');
@@ -113,10 +118,10 @@ export default function Services() {
         <div>
           <h1>Services supplémentaires</h1>
           <p style={{ color: 'var(--slate)', fontSize: 13, margin: '4px 0 0' }}>
-            Petit-déjeuner, blanchisserie, restaurant, minibar... — {services.length} article{services.length > 1 ? 's' : ''}
+            Petit-déjeuner, blanchisserie, restaurant, minibar... · {services.length} article{services.length > 1 ? 's' : ''}
           </p>
         </div>
-        <Button onClick={ouvrirCreation}>+ Nouveau service</Button>
+        {peutGererLeMenu && <Button onClick={ouvrirCreation}>+ Nouveau service</Button>}
       </div>
 
       {erreur && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="erreur">{erreur}</Alerte></div>}
@@ -147,8 +152,10 @@ export default function Services() {
               {s.description && <p style={{ fontSize: 12.5, color: 'var(--slate)', margin: '0 0 12px' }}>{s.description}</p>}
 
               <div style={{ display: 'flex', gap: 6, borderTop: '1px solid var(--line)', paddingTop: 12 }}>
-                <Button variante="secondaire" taille="sm" onClick={() => ouvrirEdition(s)} style={{ flex: 1, justifyContent: 'center' }}>Modifier</Button>
-                <Button variante="danger" taille="sm" onClick={() => setServiceASupprimer(s)} style={{ flex: 1, justifyContent: 'center' }}>Supprimer</Button>
+                {peutGererLeMenu && (<>
+                  <Button variante="secondaire" taille="sm" onClick={() => ouvrirEdition(s)} style={{ flex: 1, justifyContent: 'center' }}>Modifier</Button>
+                  <Button variante="danger" taille="sm" onClick={() => setServiceASupprimer(s)} style={{ flex: 1, justifyContent: 'center' }}>Supprimer</Button>
+                </>)}
               </div>
             </Carte>
           ))}

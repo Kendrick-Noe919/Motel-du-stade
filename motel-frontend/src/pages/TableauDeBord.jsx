@@ -13,6 +13,12 @@ import Alerte from '../components/ui/Alerte';
 import StatCard from '../components/ui/StatCard';
 import BarreProgression from '../components/ui/BarreProgression';
 import Badge, { TON_ETAT_CHAMBRE, TON_STATUT_RESERVATION } from '../components/ui/Badge';
+import { TEINTES } from '../components/ui/BarresComparees';
+import PartsDuTotal from '../components/ui/PartsDuTotal';
+import { getRecettes } from '../services/recette.service';
+import { ADMIN, STANDARDISTE, CAISSIER, BARMAN, CONTROLE, aLeRole } from '../config/acces';
+
+const fcfa = (n) => Number(n || 0).toLocaleString('fr-FR');
 
 function ListeWidget({ titre, lien, texteLien, enfants, vide }) {
   return (
@@ -31,15 +37,16 @@ export default function TableauDeBord() {
   const navigate = useNavigate();
   const roles = utilisateur?.roles || [];
 
-  const estAdmin = roles.includes('Administrateur');
-  const estManager = roles.includes('Manager');
-  const estReceptionniste = roles.includes('Receptionniste');
-  const estCaissier = roles.includes('Caissier');
-  const estBarman = roles.includes('Barman');
+  const estAdmin = roles.includes(ADMIN);
+  const estStandardiste = roles.includes(STANDARDISTE);
+  const estCaissier = roles.includes(CAISSIER);
+  const estBarman = roles.includes(BARMAN);
 
-  const voitKPIs = estAdmin || estManager;
-  const voitListesOperationnelles = estAdmin || estManager || estReceptionniste;
-  const voitCaisse = estAdmin || estCaissier || estBarman;
+  // La standardiste pilote l'établissement au quotidien : elle voit les indicateurs
+  const voitKPIs = estAdmin || estStandardiste;
+  const voitListesOperationnelles = estAdmin || estStandardiste;
+  const voitCaisse = estAdmin || estStandardiste || estCaissier || estBarman;
+  const voitRecettes = aLeRole(utilisateur, CONTROLE);
 
   const [stats, setStats] = useState(null);
   const [reservations, setReservations] = useState([]);
@@ -47,6 +54,7 @@ export default function TableauDeBord() {
   const [chambres, setChambres] = useState([]);
   const [utilisateurs, setUtilisateurs] = useState([]);
   const [caisse, setCaisse] = useState(null); // null = pas encore chargé, false = aucune ouverte
+  const [recettes, setRecettes] = useState(null);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState('');
 
@@ -64,6 +72,13 @@ export default function TableauDeBord() {
       }
       if (estAdmin) {
         taches.push(getUtilisateurs().then((u) => setUtilisateurs(u.slice(0, 5))).catch(() => {}));
+      }
+      // Le résumé financier de la journée : le chiffre par département et ce qui
+      // reste à faire entrer en caisse, sans avoir à ouvrir l'écran Recettes.
+      if (voitRecettes) {
+        const debut = new Date(); debut.setHours(0, 0, 0, 0);
+        const fin = new Date(); fin.setHours(23, 59, 59, 999);
+        taches.push(getRecettes(debut.toISOString(), fin.toISOString()).then(setRecettes).catch(() => {}));
       }
       if (voitCaisse) {
         taches.push(
@@ -126,6 +141,61 @@ export default function TableauDeBord() {
         </Carte>
       )}
 
+      {/* ---------- Résumé financier du jour (Administrateur / Caissier) ---------- */}
+      {voitRecettes && recettes && (
+        <Carte style={{ marginBottom: 'var(--space-5)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, marginBottom: 'var(--space-4)' }}>
+            <div>
+              <h3 style={{ marginBottom: 4 }}>La journée en chiffres</h3>
+              <p style={{ color: 'var(--slate)', fontSize: 12.5, margin: 0 }}>
+                Ce qui est entré en caisse aujourd'hui, et ce qui reste à encaisser.
+              </p>
+            </div>
+            <Button variante="secondaire" onClick={() => navigate('/recettes')}>Détail des recettes</Button>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-4)', marginBottom: 'var(--space-5)' }}>
+            {[
+              ['Recette nette', recettes.cumul.recetteNette, 'var(--signal-dark)'],
+              ['Chambres', recettes.departements?.chambres.encaisse, 'var(--ink)'],
+              ['Bar et restaurant', recettes.departements?.bar.encaisse, 'var(--ink)'],
+              ['Reste à encaisser', recettes.creances?.total, 'var(--danger)'],
+            ].map(([label, valeur, couleur]) => (
+              <div key={label}>
+                <p style={{ fontSize: 12, color: 'var(--slate)', margin: 0 }}>{label}</p>
+                <p className="mono" style={{ fontSize: 22, fontWeight: 700, margin: '4px 0 0', color: couleur }}>{fcfa(valeur)}</p>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 'var(--space-5)' }}>
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--slate)', fontWeight: 500, marginBottom: 'var(--space-3)' }}>Par département</p>
+              <PartsDuTotal
+                formater={fcfa}
+                libelleTotal="Encaissé aujourd'hui"
+                vide="Rien d'encaissé aujourd'hui."
+                parts={[
+                  { label: 'Chambres', valeur: recettes.departements?.chambres.encaisse, couleur: TEINTES[0] },
+                  { label: 'Bar et restaurant', valeur: recettes.departements?.bar.encaisse, couleur: TEINTES[1] },
+                ]}
+              />
+            </div>
+            <div>
+              <p style={{ fontSize: 12, color: 'var(--slate)', fontWeight: 500, marginBottom: 'var(--space-3)' }}>Par rôle</p>
+              <PartsDuTotal
+                formater={fcfa}
+                libelleTotal="Encaissé aujourd'hui"
+                vide="Aucun encaissement aujourd'hui."
+                parts={(recettes.parRole || []).map((r, i) => ({
+                  label: r.role, valeur: r.total, couleur: TEINTES[i % TEINTES.length],
+                }))}
+              />
+            </div>
+          </div>
+        </Carte>
+      )}
+
       {/* ---------- Raccourci Bar pour le Barman ---------- */}
       {estBarman && !estAdmin && (
         <Carte style={{ marginBottom: 'var(--space-5)' }}>
@@ -166,7 +236,7 @@ export default function TableauDeBord() {
             vide={reservations.length === 0}
             enfants={reservations.map((r) => (
               <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
-                <span>{r.client ? `${r.client.prenom || ''} ${r.client.nom || ''}`.trim() || 'Client' : 'Client supprimé'} — Ch. {r.chambre?.numero ?? '—'}</span>
+                <span>{r.client ? `${r.client.prenom || ''} ${r.client.nom || ''}`.trim() || 'Client' : 'Client supprimé'} · Ch. {r.chambre?.numero ?? '-'}</span>
                 <Badge label={r.statut} ton={TON_STATUT_RESERVATION[r.statut]} />
               </div>
             ))}
@@ -180,7 +250,7 @@ export default function TableauDeBord() {
             enfants={clients.map((c) => (
               <div key={c.id} style={{ fontSize: 13 }}>
                 {[c.prenom, c.nom].filter(Boolean).join(' ') || '(sans nom)'}{' '}
-                <span style={{ color: 'var(--slate)' }}>— {c.email || c.telephone}</span>
+                <span style={{ color: 'var(--slate)' }}>· {c.email || c.telephone}</span>
               </div>
             ))}
           />

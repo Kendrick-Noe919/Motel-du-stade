@@ -4,29 +4,15 @@ import { useAuth } from '../context/AuthContext';
 import { getChambres } from '../services/chambre.service';
 import { useIsTablet } from '../hooks/useMediaQuery';
 
-const TITRES_PAGES = {
-  '/': 'Tableau de bord', '/chambres': 'Chambres', '/types-chambre': 'Types de chambre',
-  '/reservations': 'Réservations', '/clients': 'Clients', '/paiements': 'Paiements',
-  '/caisse': 'Caisse', '/utilisateurs': 'Utilisateurs', '/parametres': 'Paramètres généraux',
-  '/profil': 'Mon profil', '/services': 'Services supplémentaires',
-  '/services': 'Services supplémentaires',
-  '/ventes': 'Vente au bar',
-};
+import { MODULES as MENU, TITRES_PAGES } from '../config/acces';
+import Cloche from './Cloche';
 
-const MENU = [
-  { label: 'Tableau de bord', path: '/', icone: '◇', roles: ['Administrateur', 'Manager', 'Receptionniste', 'Caissier', 'Barman'] },
-  { label: 'Chambres', path: '/chambres', icone: '▭', roles: ['Administrateur', 'Manager', 'Receptionniste'] },
-  { label: 'Types de chambre', path: '/types-chambre', icone: '◆', roles: ['Administrateur'] },
-  { label: 'Services', path: '/services', icone: '★', roles: ['Administrateur', 'Barman'] },
-  { label: 'Vente au bar', path: '/ventes', icone: '🍹', roles: ['Administrateur', 'Barman'] },
-  { label: 'Réservations', path: '/reservations', icone: '▤', roles: ['Administrateur', 'Manager', 'Receptionniste'] },
-  { label: 'Clients', path: '/clients', icone: '◍', roles: ['Administrateur', 'Manager', 'Receptionniste'] },
-  { label: 'Paiements', path: '/paiements', icone: '◈', roles: ['Administrateur', 'Manager', 'Receptionniste', 'Caissier'] },
-  { label: 'Caisse', path: '/caisse', icone: '▣', roles: ['Administrateur', 'Caissier', 'Barman'] },
-  { label: 'Utilisateurs', path: '/utilisateurs', icone: '◉', roles: ['Administrateur'] },
-  { label: 'Paramètres généraux', path: '/parametres', icone: '⚙', roles: ['Administrateur'] },
-];
 const COULEUR_ETAT = { DISPONIBLE: 'var(--signal)', OCCUPEE: 'var(--danger)', MAINTENANCE: 'var(--warning)', NETTOYAGE: 'var(--info)' };
+
+// La mini-carte des chambres est annoncée « en direct » : elle doit vraiment l'être.
+// Sans ce rafraîchissement, un état changé par un collègue restait invisible tant
+// qu'on ne naviguait pas.
+const INTERVALLE_RAFRAICHISSEMENT_MS = 20000;
 
 export default function Layout() {
   const { utilisateur, deconnexion } = useAuth();
@@ -38,7 +24,12 @@ export default function Layout() {
   const [sidebarOuverte, setSidebarOuverte] = useState(false);
 
   useEffect(() => {
-    getChambres().then(setChambres).catch(() => {});
+    let actif = true;
+    const charger = () => getChambres().then((c) => { if (actif) setChambres(c); }).catch(() => {});
+
+    charger();
+    const minuteur = setInterval(charger, INTERVALLE_RAFRAICHISSEMENT_MS);
+    return () => { actif = false; clearInterval(minuteur); };
   }, [location.pathname]);
 
   // Ferme automatiquement le tiroir mobile après chaque navigation
@@ -67,7 +58,7 @@ export default function Layout() {
 
       <p style={{ fontSize: 12, fontWeight: 500, color: 'var(--slate-light)', padding: '0 var(--space-3)', marginBottom: 10 }}>MENU PRINCIPAL</p>
 
-      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, overflowY: 'auto' }}>
+      <nav style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {menuVisible.map((item) => {
   const actif = location.pathname === item.path;
   return (
@@ -99,7 +90,7 @@ export default function Layout() {
           </p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
             {chambres.map((ch) => (
-              <div key={ch.id} title={`N°${ch.numero} — ${ch.etat}`} style={{ aspectRatio: '1', borderRadius: 3, background: COULEUR_ETAT[ch.etat] || 'var(--line-strong)' }} />
+              <div key={ch.id} title={`N°${ch.numero} · ${ch.etat}`} style={{ aspectRatio: '1', borderRadius: 3, background: COULEUR_ETAT[ch.etat] || 'var(--line-strong)' }} />
             ))}
           </div>
         </div>
@@ -108,7 +99,9 @@ export default function Layout() {
   );
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--stone)' }}>
+    // Hauteur bornée à la fenêtre : seul <main> défile, la sidebar et l'en-tête
+    // restent en place quel que soit la longueur du contenu.
+    <div className="app-shell" style={{ display: 'flex', background: 'var(--stone)' }}>
       {/* ---------- Sidebar : fixe en desktop, tiroir en mobile/tablette ---------- */}
       {estTablette ? (
         <>
@@ -135,12 +128,12 @@ export default function Layout() {
       )}
 
       {/* ---------- Colonne principale ---------- */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%', overflow: 'hidden' }}>
         <header style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           background: 'var(--surface)', borderBottom: '1px solid var(--line)',
           padding: estTablette ? 'var(--space-3) var(--space-4)' : 'var(--space-4) var(--space-6)',
-          boxShadow: 'var(--shadow-sm)', position: 'sticky', top: 0, zIndex: 10,
+          boxShadow: 'var(--shadow-sm)', flexShrink: 0, zIndex: 10,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {estTablette && (
@@ -155,6 +148,8 @@ export default function Layout() {
             <h1 style={{ fontSize: estTablette ? 16 : 18 }}>{TITRES_PAGES[location.pathname] || 'Motel du Stade'}</h1>
           </div>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Cloche />
           <div style={{ position: 'relative' }}>
             <button
               onClick={() => setMenuProfilOuvert(!menuProfilOuvert)}
@@ -193,9 +188,10 @@ export default function Layout() {
               </>
             )}
           </div>
+          </div>
         </header>
 
-        <main style={{ flex: 1, padding: estTablette ? 'var(--space-4)' : 'var(--space-6)', overflowY: 'auto', overflowX: 'hidden' }}>
+        <main style={{ flex: 1, minHeight: 0, padding: estTablette ? 'var(--space-4)' : 'var(--space-6)', overflowY: 'auto', overflowX: 'hidden' }}>
           <Outlet />
         </main>
       </div>

@@ -1,7 +1,7 @@
 import bcrypt from 'bcrypt';
 import prisma from '../utils/prisma.js';
 
-// Liste UNIQUE et centrale des champs renvoyés au frontend — jamais le mot de passe
+// Liste UNIQUE et centrale des champs renvoyés au frontend, jamais le mot de passe
 const champsPublics = {
   id: true,
   nom: true,
@@ -17,7 +17,7 @@ const champsPublics = {
 const SEXES_VALIDES = ['M', 'F'];
 
 // ============================================================
-// POST /api/clients/inscription — compte complet (réservation en ligne)
+// POST /api/clients/inscription : compte complet (réservation en ligne)
 // ============================================================
 export async function inscrireClient(req, res) {
   try {
@@ -51,7 +51,7 @@ export async function inscrireClient(req, res) {
 }
 
 // ============================================================
-// POST /api/clients/rapide — client de passage, téléphone seul obligatoire
+// POST /api/clients/rapide : client de passage, téléphone seul obligatoire
 // ============================================================
 export async function enregistrerClientRapide(req, res) {
   try {
@@ -147,7 +147,7 @@ export async function getHistoriqueClient(req, res) {
 }
 
 // ============================================================
-// PATCH /api/clients/:id — modifie les infos de base (jamais email/mdp)
+// PATCH /api/clients/:id : modifie les infos de base (jamais email/mdp)
 // ============================================================
 export async function updateClient(req, res) {
   try {
