@@ -25,14 +25,18 @@ export async function ajouterConsommation(sejourId, serviceId, quantite) {
 export async function supprimerConsommation(id) {
   await api.delete(`/services/consommations/${id}`);
 }
-export async function ajouterHeuresSupplementaires(sejourId, nombreHeures) {
-  const { data } = await api.post(`/sejours/${sejourId}/heures-supplementaires`, { nombreHeures });
+// remisePourcent : la remise négociée pour CETTE prolongation seulement.
+//   omis → on hérite de la remise de la réservation
+//   0    → explicitement aucune remise
+// La remise de la réservation d'origine n'est jamais modifiée.
+export async function ajouterHeuresSupplementaires(sejourId, nombreHeures, remisePourcent) {
+  const { data } = await api.post(`/sejours/${sejourId}/heures-supplementaires`, { nombreHeures, remisePourcent });
   return data;
 }
 
 // Prolongation d'un séjour à la nuitée : le serveur repousse la date de départ,
 // facture les nuits au tarif de la chambre et refuse si la chambre est réservée après.
-export async function ajouterNuitsSupplementaires(sejourId, nombreNuits) {
-  const { data } = await api.post(`/sejours/${sejourId}/nuits-supplementaires`, { nombreNuits });
+export async function ajouterNuitsSupplementaires(sejourId, nombreNuits, remisePourcent) {
+  const { data } = await api.post(`/sejours/${sejourId}/nuits-supplementaires`, { nombreNuits, remisePourcent });
   return data;
 }

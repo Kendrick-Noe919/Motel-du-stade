@@ -8,6 +8,7 @@ import Button from '../components/ui/Button';
 import Alerte from '../components/ui/Alerte';
 import Champ, { styleInput } from '../components/ui/Champ';
 import Carte from '../components/ui/Carte';
+import LigneTableau from '../components/ui/LigneTableau';
 import Modal from '../components/ui/Modal';
 import Badge from '../components/ui/Badge';
 
@@ -35,6 +36,7 @@ export default function Utilisateurs() {
   const [archiveTelechargee, setArchiveTelechargee] = useState(false);
   const [telechargementEnCours, setTelechargementEnCours] = useState(false);
   const [suppressionEnCours, setSuppressionEnCours] = useState(false);
+  const [messageSuppression, setMessageSuppression] = useState(null);
 
   useEffect(() => { chargerDonnees(); }, []);
 
@@ -115,6 +117,7 @@ export default function Utilisateurs() {
     setErreur('');
     setCompteASupprimer({ ...u, inventaire: null });
     setArchiveTelechargee(false);
+    setMessageSuppression(null);
     try {
       setCompteASupprimer({ ...u, inventaire: await verifierSuppression(u.id) });
     } catch (err) {
@@ -126,12 +129,13 @@ export default function Utilisateurs() {
   async function handleTelechargerArchive() {
     const u = compteASupprimer;
     setTelechargementEnCours(true);
+    setMessageSuppression(null);
     try {
       const nom = `archive-${u.prenom}-${u.nom}-${u.id}.json`.toLowerCase().replace(/[^a-z0-9.-]+/g, '-');
       await telechargerArchive(u.id, nom);
       setArchiveTelechargee(true);
     } catch (err) {
-      setErreur('Impossible de télécharger l\'archive');
+      setMessageSuppression('Impossible de télécharger l\'archive');
     } finally {
       setTelechargementEnCours(false);
     }
@@ -139,14 +143,17 @@ export default function Utilisateurs() {
 
   async function handleConfirmerSuppression() {
     setSuppressionEnCours(true);
+    setMessageSuppression(null);
     try {
       const { message } = await supprimerUtilisateur(compteASupprimer.id);
       setCompteASupprimer(null);
       setSucces(message);
       await chargerDonnees();
     } catch (err) {
-      setErreur(err.response?.data?.message || 'Suppression impossible');
-      setCompteASupprimer(null);
+      // Le modal reste ouvert et porte l'explication : envoyée au bandeau de la
+      // page, elle se retrouverait derrière le voile, et fermer le modal ferait
+      // perdre le contexte de ce qu'on essayait de faire.
+      setMessageSuppression(err.response?.data?.message || 'Suppression impossible');
     } finally {
       setSuppressionEnCours(false);
     }
@@ -202,10 +209,10 @@ export default function Utilisateurs() {
               </tr>
             </thead>
             <tbody>
-              {listeAffichee.map((u) => {
+              {listeAffichee.map((u, i) => {
                 const rolesDisponibles = roles.filter((r) => !u.roles.some((ur) => ur.id === r.id));
                 return (
-                  <tr key={u.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                  <LigneTableau key={u.id} index={i}>
                     <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13.5, fontWeight: 500 }}>{u.prenom} {u.nom}</td>
                     <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{u.email}</td>
                     <td style={{ padding: 'var(--space-3) var(--space-4)' }}>
@@ -273,7 +280,7 @@ export default function Utilisateurs() {
                         )}
                       </div>
                     </td>
-                  </tr>
+                  </LigneTableau>
                 );
               })}
             </tbody>
@@ -374,6 +381,15 @@ export default function Utilisateurs() {
                   Ces opérations restent en base et gardent leur valeur comptable ; elles
                   perdent seulement le nom de leur auteur.
                 </p>
+              </div>
+            )}
+
+            {messageSuppression && (
+              <div className="anim-alerte" style={{
+                background: 'var(--danger-bg)', borderLeft: '3px solid var(--danger)',
+                borderRadius: 'var(--radius-sm)', padding: 'var(--space-3)', fontSize: 13, color: 'var(--ink)',
+              }}>
+                {messageSuppression}
               </div>
             )}
 

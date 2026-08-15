@@ -4,11 +4,14 @@ const STYLES = {
   attention: { bg: 'var(--warning-bg)', border: 'var(--warning)', text: 'var(--warning)', icone: '!' },
 };
 
+// Une alerte surgit sans prévenir et pousse le contenu vers le bas : apparue d'un
+// coup, elle fait sursauter la page. Elle se déplie donc en s'ouvrant, brièvement.
+// L'animation est désactivée si le système demande de réduire les mouvements.
 export default function Alerte({ variante = 'erreur', titre, children }) {
   const style = STYLES[variante];
 
   return (
-    <div style={{
+    <div className="anim-alerte" style={{
       display: 'flex', gap: 12, alignItems: 'flex-start',
       background: style.bg, borderLeft: `4px solid ${style.border}`,
       borderRadius: 'var(--radius-sm)', padding: '12px 16px', fontSize: 13,

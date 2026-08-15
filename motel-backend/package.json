@@ -7,6 +7,7 @@
     "dev": "tsx watch src/server.js",
     "start": "tsx src/server.js",
     "seed": "tsx prisma/seed.js",
+    "seed:carte": "tsx prisma/seed-carte.js",
     "reset:exploitation": "tsx prisma/reinitialiser-exploitation.js",
     "migrate:deploy": "prisma migrate deploy",
     "postinstall": "prisma generate",

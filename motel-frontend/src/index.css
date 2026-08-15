@@ -86,6 +86,30 @@ body {
   to   { opacity: 1; transform: scale(1); }
 }
 
+/* Les alertes poussent le contenu : elles s'ouvrent au lieu de surgir. La hauteur
+   est animée en même temps que l'opacité, sinon la page saute d'un coup de la
+   hauteur du bandeau. grid-template-rows permet d'animer vers une hauteur inconnue,
+   ce que height ne sait pas faire. */
+@keyframes apparition-alerte {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.anim-alerte {
+  animation: apparition-alerte 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* La confirmation flottante descend du haut de l'écran. Le translateX compense le
+   centrage par left: 50%, il doit donc rester présent dans les deux étapes. */
+@keyframes apparition-toast {
+  from { opacity: 0; transform: translate(-50%, -16px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.anim-toast {
+  animation: apparition-toast 0.3s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
 .anim-montee { animation: apparition-montee 0.55s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
 .anim-fondu  { animation: apparition-fondu 0.7s ease both; }
 .anim-zoom   { animation: apparition-zoom 1.1s cubic-bezier(0.22, 0.61, 0.36, 1) both; }
@@ -93,10 +117,18 @@ body {
 /* Le mouvement rend malades certaines personnes, et le système d'exploitation
    permet de le dire. On respecte ce réglage plutôt que de l'ignorer. */
 @media (prefers-reduced-motion: reduce) {
-  .anim-montee, .anim-fondu, .anim-zoom {
+  .anim-montee, .anim-fondu, .anim-zoom, .anim-alerte {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+
+  /* Le toast garde son centrage : lui retirer transform le décalerait de la moitié
+     de sa largeur. Seule l'animation disparaît. */
+  .anim-toast {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: translate(-50%, 0) !important;
   }
 }
 

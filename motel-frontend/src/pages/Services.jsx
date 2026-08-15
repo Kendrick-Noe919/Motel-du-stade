@@ -6,6 +6,7 @@ import Carte from '../components/ui/Carte';
 import Modal from '../components/ui/Modal';
 import ModalConfirmation from '../components/ui/ModalConfirmation';
 import Alerte from '../components/ui/Alerte';
+import Toast from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { aLeRole, SEUL_ADMIN } from '../config/acces';
 
@@ -125,7 +126,7 @@ export default function Services() {
       </div>
 
       {erreur && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="erreur">{erreur}</Alerte></div>}
-      {succes && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="succes">{succes}</Alerte></div>}
+      <Toast message={succes} onFermer={() => setSucces('')} />
 
       {chargement ? (
         <p style={{ color: 'var(--slate)' }}>Chargement...</p>

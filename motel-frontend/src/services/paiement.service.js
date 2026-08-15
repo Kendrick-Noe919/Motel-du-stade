@@ -10,8 +10,10 @@ export async function enregistrerPaiement(paiement) {
   return data;
 }
 
-export async function rembourserPaiement(id, annulerReservation) {
-  const { data } = await api.patch(`/paiements/${id}/rembourser`, { annulerReservation });
+// motif : obligatoire quand la prestation a déjà été rendue (client sur place ou
+// séjour terminé). Le serveur refuse sans lui et explique pourquoi.
+export async function rembourserPaiement(id, annulerReservation, motif) {
+  const { data } = await api.patch(`/paiements/${id}/rembourser`, { annulerReservation, motif });
   return data;
 }
 export async function telechargerFacture(paiementId, numeroFacture) {

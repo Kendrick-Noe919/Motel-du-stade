@@ -6,6 +6,7 @@ import {
 import Button from '../components/ui/Button';
 import Champ, { styleInput } from '../components/ui/Champ';
 import Carte from '../components/ui/Carte';
+import LigneTableau from '../components/ui/LigneTableau';
 import Modal from '../components/ui/Modal';
 import Alerte from '../components/ui/Alerte';
 import { getRapportJournee } from '../services/recette.service';
@@ -213,15 +214,15 @@ export default function Caisse() {
                   </tr>
                 </thead>
                 <tbody>
-                  {historique.map((m) => (
-                    <tr key={m.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                  {historique.map((m, i) => (
+                    <LigneTableau key={m.id} index={i}>
                       <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{new Date(m.dateMouvement).toLocaleString('fr-FR')}</td>
                       <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, fontWeight: 500, color: m.type === 'ENTREE' ? 'var(--success)' : 'var(--danger)' }}>
                         {m.type === 'ENTREE' ? '↑ Entrée' : '↓ Sortie'}
                       </td>
                       <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, fontWeight: 500 }}>{m.montant}</td>
                       <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{m.motif || '-'}</td>
-                    </tr>
+                    </LigneTableau>
                   ))}
                 </tbody>
               </table>
@@ -303,8 +304,8 @@ export default function Caisse() {
                       </tr>
                     </thead>
                     <tbody>
-                      {postesFiltres.map((p) => (
-                        <tr key={p.caisseId} style={{ borderBottom: '1px solid var(--line)' }}>
+                      {postesFiltres.map((p, i) => (
+                        <LigneTableau key={p.caisseId} index={i}>
                           <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>{p.tenuePar}</td>
                           <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: 'var(--slate)' }}>{p.roles.join(', ') || '-'}</td>
                           <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, fontWeight: 500, color: p.ouverte ? 'var(--warning)' : 'var(--slate)' }}>
@@ -316,7 +317,7 @@ export default function Caisse() {
                           <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, fontWeight: 600, color: p.ecart === null ? 'var(--slate-light)' : p.ecart === 0 ? 'var(--success)' : 'var(--danger)' }}>
                             {p.ecart === null ? 'non fermée' : `${p.ecart > 0 ? '+' : ''}${p.ecart}`}
                           </td>
-                        </tr>
+                        </LigneTableau>
                       ))}
                     </tbody>
                   </table>
@@ -342,8 +343,8 @@ export default function Caisse() {
                         </tr>
                       </thead>
                       <tbody>
-                        {mouvementsConsolides.map((m) => (
-                          <tr key={m.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                        {mouvementsConsolides.map((m, i) => (
+                          <LigneTableau key={m.id} index={i}>
                             <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
                               {new Date(m.heure).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
                             </td>
@@ -356,7 +357,7 @@ export default function Caisse() {
                             </td>
                             <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, fontWeight: 500 }}>{m.montant}</td>
                             <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{m.motif || '-'}</td>
-                          </tr>
+                          </LigneTableau>
                         ))}
                       </tbody>
                     </table>

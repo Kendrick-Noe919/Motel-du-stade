@@ -99,6 +99,49 @@ async function resoudreClient(tx, { clientId, client }) {
   });
 }
 
+// Jusqu'où les dates d'une réservation restent-elles négociables ?
+//
+// Un client qui a réservé pour la semaine prochaine rappelle souvent pour décaler :
+// la réception doit pouvoir le faire, y compris après confirmation. Ce qui ferme la
+// porte, ce n'est pas la confirmation, c'est l'imminence — puis l'arrivée.
+//
+//   en attente                     → modifiable
+//   confirmée, arrivée plus tard   → modifiable
+//   confirmée, arrivée aujourd'hui → figée : la chambre est préparée pour ce soir
+//   client sur place               → figée : le séjour a commencé, on prolonge
+//   terminée / annulée / expirée   → figée
+//
+// Renvoie la raison du refus, ou null si le changement est permis.
+export function raisonDeRefuserLeChangementDeDates(reservation) {
+  if (['ANNULEE', 'TERMINEE', 'EXPIREE'].includes(reservation.statut)) {
+    return 'Les dates d\'une réservation annulée, terminée ou non honorée ne se modifient plus.';
+  }
+
+  if (reservation.statut === 'EN_COURS') {
+    return 'Le client est déjà installé : passez par « Prolonger le séjour » pour repousser son départ.';
+  }
+
+  if (reservation.statut === 'CONFIRMEE') {
+    const finDuJour = new Date();
+    finDuJour.setHours(23, 59, 59, 999);
+    if (new Date(reservation.dateArrivee) <= finDuJour) {
+      return 'Arrivée prévue aujourd\'hui sur une réservation confirmée : la chambre lui est réservée, les dates ne changent plus. Annulez et recréez si le client se décommande.';
+    }
+  }
+
+  return null;
+}
+
+// Une remise est facultative. Renvoie null si rien n'est demandé, le pourcentage
+// s'il est valide, et false s'il est aberrant — pour distinguer « pas de remise »
+// de « remise invalide », que zéro seul ne saurait exprimer.
+export function normaliserRemise(valeur) {
+  if (valeur === undefined || valeur === null || valeur === '') return null;
+  const nombre = Number(valeur);
+  if (!Number.isInteger(nombre) || nombre < 1 || nombre > 100) return false;
+  return nombre;
+}
+
 export function calculerMontant(typeChambre, modeTarification, nombreNuits, nombreHeures) {
   let montant;
 
@@ -326,6 +369,18 @@ export async function createReservation(req, res) {
       return res.status(400).json({ message: err.message });
     }
 
+    // ---------- Remises de fidélité ----------
+    const remiseChambre = normaliserRemise(req.body.remiseChambrePourcent);
+    const remiseBar = normaliserRemise(req.body.remiseBarPourcent);
+    if (remiseChambre === false || remiseBar === false) {
+      return res.status(400).json({ message: 'Une remise doit être un pourcentage entre 1 et 100.' });
+    }
+
+    // La remise chambre s'applique tout de suite, une fois pour toutes.
+    if (remiseChambre) {
+      montantTotal = Math.round(montantTotal * (1 - remiseChambre / 100) * 100) / 100;
+    }
+
     // Tout dans une transaction : la vérification de disponibilité doit être atomique
     // avec la création, sinon deux réservations enregistrées au même instant sur la
     // même chambre passent toutes les deux.
@@ -353,6 +408,9 @@ export async function createReservation(req, res) {
           nombreNuits,
           nombreHeures: mode === 'HORAIRE' ? Number(nombreHeures) : null,
           montantTotal,
+          remiseChambrePourcent: remiseChambre,
+          remiseBarPourcent: remiseBar,
+          remiseMotif: (remiseChambre || remiseBar) ? (req.body.remiseMotif || 'Client fidèle') : null,
           source: source === 'EN_LIGNE' ? 'EN_LIGNE' : 'RECEPTION',
           statut: 'EN_ATTENTE',
           creePar: { connect: { id: req.user.id } },
@@ -367,6 +425,40 @@ export async function createReservation(req, res) {
         cibleId: creee.id,
         resume: `Réservation #${creee.id} pour ${nomClient}, chambre ${chambre.numero}, ${montantTotal}`,
       });
+
+      await notifier(tx, {
+        type: 'RESERVATION_CREEE',
+        titre: 'Nouvelle réservation',
+        message: `${nomClient} · chambre ${chambre.numero} · `
+               + `${new Date(dateArrivee).toLocaleDateString('fr-FR')} · ${montantTotal}`,
+        lien: '/reservations',
+      });
+
+      if (remiseChambre || remiseBar) {
+        const detail = [
+          remiseChambre ? `${remiseChambre} % sur la chambre` : null,
+          remiseBar ? `${remiseBar} % au bar` : null,
+        ].filter(Boolean).join(' et ');
+
+        await notifier(tx, {
+          type: 'REMISE_ACCORDEE',
+          titre: 'Remise de fidélité accordée',
+          message: `${nomClient} (chambre ${chambre.numero}) : ${detail}.`,
+          lien: '/reservations',
+        });
+      }
+
+      // Le bar est prévenu séparément : c'est lui qui appliquera la remise quand
+      // le client se présentera au comptoir, il doit le savoir d'avance.
+      if (remiseBar) {
+        await notifier(tx, {
+          type: 'REMISE_BAR_ACTIVE',
+          titre: `Remise bar sur la chambre ${chambre.numero}`,
+          message: `${nomClient} bénéficie de ${remiseBar} % sur ses consommations. `
+                 + 'La remise s\'applique toute seule au point de vente.',
+          lien: '/ventes',
+        });
+      }
 
       return creee;
     });
@@ -523,7 +615,6 @@ export async function arriveeDirecte(req, res) {
         titre: 'Un client vient d\'arriver',
         message: `${nomClient} occupe la chambre ${chambre.numero} depuis maintenant.`,
         lien: '/reservations',
-        roleCible: ADMIN,
       });
 
       return { reservation, sejour, paiement, resteAPayer: Math.max(0, montantTotal - aRegler) };
@@ -555,8 +646,9 @@ export async function modifierReservation(req, res) {
       return res.status(404).json({ message: 'Réservation non trouvée' });
     }
 
-    if (['ANNULEE', 'TERMINEE'].includes(reservationExistante.statut) && (dateArrivee || dateDepart)) {
-      return res.status(400).json({ message: 'Impossible de modifier les dates d\'une réservation annulée ou terminée' });
+    if (dateArrivee || dateDepart) {
+      const blocage = raisonDeRefuserLeChangementDeDates(reservationExistante);
+      if (blocage) return res.status(400).json({ message: blocage });
     }
 
     const nouvelleArrivee = dateArrivee || reservationExistante.dateArrivee;
@@ -772,8 +864,20 @@ export async function deleteReservation(req, res) {
 
     const paiementsActifs = reservation.paiements.filter((p) => !p.rembourse);
     if (paiementsActifs.length > 0) {
+      // Le compte seul ne suffisait pas : sur une réservation annulée, l'écran
+      // n'affiche aucun montant, et l'administrateur devait deviner de quels
+      // paiements on lui parlait. Le message les nomme.
+      const detail = paiementsActifs
+        .map((p) => `${p.montant} du ${new Date(p.datePaiement).toLocaleDateString('fr-FR')}`)
+        .join(', ');
+
       return res.status(409).json({
-        message: `Impossible de supprimer : ${paiementsActifs.length} paiement(s) actif(s) non remboursé(s). Remboursez-les d'abord.`,
+        message: `Impossible de supprimer : ${paiementsActifs.length} paiement(s) encore actif(s) `
+               + `sur la réservation #${reservation.id} — ${detail}. `
+               + 'Remboursez-les depuis l\'écran Paiements avant de supprimer.',
+        paiementsActifs: paiementsActifs.map((p) => ({
+          id: p.id, montant: Number(p.montant), datePaiement: p.datePaiement, modePaiement: p.modePaiement,
+        })),
       });
     }
 

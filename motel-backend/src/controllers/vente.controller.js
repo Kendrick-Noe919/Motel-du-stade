@@ -2,6 +2,7 @@ import prisma from '../utils/prisma.js';
 import { exigerCaisseOuverte } from './caisse.controller.js';
 import { estSuperviseur } from '../middlewares/auth.middleware.js';
 import { tracer } from '../utils/journal.js';
+import { notifier } from '../utils/notifications.js';
 
 // POST /api/ventes, body: { lignes: [{ serviceId, quantite }] }
 export async function creerVente(req, res) {
@@ -50,6 +51,13 @@ export async function creerVente(req, res) {
         },
       });
 
+      await notifier(tx, {
+        type: 'VENTE_BAR',
+        titre: 'Vente encaissée au bar',
+        message: `${vente.lignes.length} article(s) pour ${montantTotal}, encaissés au comptoir.`,
+        lien: '/recettes',
+      });
+
       return { vente, caisse };
     });
 
@@ -85,6 +93,9 @@ export async function getChambresOccupees(req, res) {
         dateDepart: s.reservation.dateDepart,
         modeTarification: s.reservation.modeTarification,
         departDepasse: new Date(s.reservation.dateDepart) < new Date(),
+        // Le barman doit voir la remise avant de valider, pas la découvrir sur le
+        // total : c'est ce qui lui permet de l'annoncer au client.
+        remiseBarPourcent: s.reservation.remiseBarPourcent || 0,
       }))
       .sort((a, b) => String(a.chambreNumero).localeCompare(String(b.chambreNumero)));
 
@@ -122,6 +133,11 @@ export async function envoyerSurChambre(req, res) {
     const nomClient = `${sejour.reservation.client.prenom || ''} ${sejour.reservation.client.nom || ''}`.trim()
                    || sejour.reservation.client.telephone;
 
+    // La remise bar accordée à ce client s'applique d'elle-même, sans que le barman
+    // ait à y penser ni à la calculer. Elle est figée dans le prix de la ligne :
+    // changer la remise plus tard ne réécrira pas les commandes déjà passées.
+    const remise = sejour.reservation.remiseBarPourcent || 0;
+
     const resultat = await prisma.$transaction(async (tx) => {
       let montantTotal = 0;
 
@@ -130,14 +146,18 @@ export async function envoyerSurChambre(req, res) {
         if (!service) throw new Error(`Service introuvable (id ${ligne.serviceId})`);
 
         const quantite = Number(ligne.quantite) || 1;
-        montantTotal += Number(service.prix) * quantite;
+        const prixApplique = remise > 0
+          ? Math.round(Number(service.prix) * (1 - remise / 100) * 100) / 100
+          : Number(service.prix);
+
+        montantTotal += prixApplique * quantite;
 
         await tx.consommation.create({
           data: {
             sejour: { connect: { id: sejour.id } },
             service: { connect: { id: service.id } },
             quantite,
-            prixApplique: service.prix, // le prix est figé au moment de la commande
+            prixApplique, // prix figé au moment de la commande, remise comprise
           },
         });
       }
@@ -147,10 +167,24 @@ export async function envoyerSurChambre(req, res) {
         cibleType: 'reservation',
         cibleId: sejour.reservationId,
         resume: `${lignes.length} article(s) portés sur la chambre `
-              + `${sejour.reservation.chambre.numero} (${nomClient}) · ${montantTotal}`,
+              + `${sejour.reservation.chambre.numero} (${nomClient}) · ${montantTotal}`
+              + (remise > 0 ? ` · remise fidélité ${remise} %` : ''),
       });
 
-      return { montantTotal, chambreNumero: sejour.reservation.chambre.numero, client: nomClient };
+      await notifier(tx, {
+        type: 'COMMANDE_SUR_CHAMBRE',
+        titre: 'Commande portée sur une chambre',
+        message: `${Math.round(montantTotal * 100) / 100} porté sur la chambre ${sejour.reservation.chambre.numero} `
+               + `(${nomClient}). Réglé au départ du client.`,
+        lien: '/paiements',
+      });
+
+      return {
+        montantTotal: Math.round(montantTotal * 100) / 100,
+        chambreNumero: sejour.reservation.chambre.numero,
+        client: nomClient,
+        remiseAppliquee: remise,
+      };
     });
 
     res.status(201).json(resultat);

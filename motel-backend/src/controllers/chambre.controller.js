@@ -83,7 +83,6 @@ export async function createChambre(req, res) {
         titre: 'Nouvelle chambre disponible',
         message: `La chambre ${creee.numero} (${creee.typeChambre.libelle}) est désormais réservable.`,
         lien: '/chambres',
-        roleCible: STANDARDISTE,
       });
 
       return creee;

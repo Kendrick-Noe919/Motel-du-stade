@@ -1,0 +1,22 @@
+# Sauvegardes et dumps de la base.
+#
+# Ils contiennent les noms, telephones et e-mails des clients, ainsi que les
+# empreintes des mots de passe du personnel : ils nont rien a faire dans un depot.
+database/
+*.sql.gz
+
+# Dependances et fichiers generes
+node_modules/
+dist/
+build/
+
+# Secrets et configuration locale
+.env
+.env.local
+.env.*.local
+
+# Journaux et fichiers temporaires
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

@@ -1,12 +1,22 @@
 import { useState, useEffect } from 'react';
 import { getRoles, creerRole, supprimerRole } from '../services/role.service';
-import { getParametres, modifierParametre } from '../services/parametre.service';
+import {
+  getParametres, modifierParametre, getReglagesNotifications, basculerNotification,
+} from '../services/parametre.service';
 import Button from '../components/ui/Button';
 import Alerte from '../components/ui/Alerte';
 import Champ, { styleInput, focusHandlers } from '../components/ui/Champ';
 import Carte from '../components/ui/Carte';
 import Modal from '../components/ui/Modal';
 import ModalConfirmation from '../components/ui/ModalConfirmation';
+
+// Les codes de rôle sont techniques : l'écran affiche des intitulés lisibles.
+const LIBELLE_ROLE = {
+  ADMIN: 'Administration',
+  STANDARDISTE: 'Réception',
+  CAISSIER: 'Caisse',
+  BARMAN: 'Bar',
+};
 
 export default function Parametres() {
   const [roles, setRoles] = useState([]);
@@ -26,13 +36,40 @@ export default function Parametres() {
   const [valeursSaisies, setValeursSaisies] = useState({});
   const [succesParametre, setSuccesParametre] = useState('');
 
-  useEffect(() => { chargerRoles(); chargerParametres(); }, []);
+  // ---------- Notifications ----------
+  const [reglages, setReglages] = useState([]);
+  const [basculeEnCours, setBasculeEnCours] = useState(null);
+
+  useEffect(() => { chargerRoles(); chargerParametres(); chargerReglages(); }, []);
 
   async function chargerParametres() {
     try {
       setParametres(await getParametres());
     } catch {
       setErreur('Impossible de charger les paramètres');
+    }
+  }
+
+  async function chargerReglages() {
+    try {
+      setReglages(await getReglagesNotifications());
+    } catch {
+      setErreur('Impossible de charger les réglages de notification');
+    }
+  }
+
+  async function handleBasculer(type, actif) {
+    setBasculeEnCours(type);
+    setErreur('');
+    try {
+      await basculerNotification(type, actif);
+      // Mise à jour locale plutôt que rechargement complet : la bascule doit
+      // répondre instantanément sous le doigt.
+      setReglages((liste) => liste.map((r) => (r.type === type ? { ...r, actif } : r)));
+    } catch (err) {
+      setErreur(err.response?.data?.message || 'Impossible de modifier ce réglage');
+    } finally {
+      setBasculeEnCours(null);
     }
   }
 
@@ -184,6 +221,63 @@ export default function Parametres() {
           </div>
         </form>
       </Modal>
+
+      {/* ---------- Notifications ----------
+          Un interrupteur par type. La liste vient du catalogue du serveur : un
+          type ajouté au code apparaît ici sans migration ni saisie préalable. */}
+      <Carte style={{ marginTop: 'var(--space-6)' }}>
+        <h3 style={{ marginBottom: 4 }}>Notifications</h3>
+        <p style={{ fontSize: 12.5, color: 'var(--slate)', marginBottom: 'var(--space-5)' }}>
+          Ce que chaque poste reçoit dans sa cloche. Couper un type n'efface pas les
+          notifications déjà envoyées.
+        </p>
+
+        {reglages.length === 0 ? (
+          <p style={{ fontSize: 13, color: 'var(--slate)' }}>Chargement des réglages...</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
+            {[...new Set(reglages.map((r) => r.groupe))].map((groupe) => (
+              <div key={groupe}>
+                <p style={{
+                  fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.08em',
+                  textTransform: 'uppercase', color: 'var(--slate)', margin: '0 0 10px',
+                }}>
+                  {groupe}
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {reglages.filter((r) => r.groupe === groupe).map((r) => (
+                    <label
+                      key={r.type}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '10px 0', borderBottom: '1px solid var(--line)', cursor: 'pointer',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={r.actif}
+                        disabled={basculeEnCours === r.type}
+                        onChange={(e) => handleBasculer(r.type, e.target.checked)}
+                      />
+                      <span style={{ flex: 1 }}>
+                        <span style={{ fontSize: 13.5, color: 'var(--ink)', fontWeight: 500 }}>{r.libelle}</span>
+                        <br />
+                        <span style={{ fontSize: 11.5, color: 'var(--slate)' }}>
+                          Reçue par : {r.destinataires.map((d) => LIBELLE_ROLE[d] || d).join(', ')}
+                        </span>
+                      </span>
+                      {!r.parDefaut && !r.actif && (
+                        <span style={{ fontSize: 11, color: 'var(--slate-light)' }}>éteint d'origine</span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Carte>
 
       <ModalConfirmation
         ouvert={!!roleASupprimer}

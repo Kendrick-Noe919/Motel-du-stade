@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import prisma from '../utils/prisma.js';
+import { notifier } from '../utils/notifications.js';
 
 // Liste UNIQUE et centrale des champs renvoyés au frontend, jamais le mot de passe
 const champsPublics = {
@@ -69,6 +70,13 @@ export async function enregistrerClientRapide(req, res) {
       select: champsPublics,
     });
 
+    await notifier(prisma, {
+      type: 'CLIENT_ENREGISTRE',
+      titre: 'Nouveau client enregistré',
+      message: `${`${prenom || ''} ${nom || ''}`.trim() || telephone} a été ajouté au fichier clients.`,
+      lien: '/clients',
+    });
+
     res.status(201).json(client);
   } catch (error) {
     console.error(error);
@@ -109,10 +117,19 @@ export async function rechercherClient(req, res) {
           { telephone: { contains: q } },
         ],
       },
-      select: champsPublics,
+      select: {
+        ...champsPublics,
+        // Les séjours réellement venus : ni les annulations ni les non-venues ne
+        // font un client fidèle. C'est ce compteur qui déclenche la proposition de
+        // remise au moment de la réservation.
+        _count: { select: { reservations: { where: { statut: { in: ['EN_COURS', 'TERMINEE'] } } } } },
+      },
     });
 
-    res.json(clients);
+    res.json(clients.map(({ _count, ...client }) => ({
+      ...client,
+      nombreSejours: _count.reservations,
+    })));
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Erreur serveur', error: error.message });

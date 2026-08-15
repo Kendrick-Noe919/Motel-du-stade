@@ -1,5 +1,6 @@
 import prisma from '../utils/prisma.js';
 import { estSuperviseur } from '../middlewares/auth.middleware.js';
+import { notifier } from '../utils/notifications.js';
 
 function calculerSolde(soldeInitial, mouvements) {
   const totalEntrees = mouvements

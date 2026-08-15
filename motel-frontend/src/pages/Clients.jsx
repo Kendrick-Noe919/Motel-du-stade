@@ -7,9 +7,12 @@ import { useDebounce } from '../hooks/useDebounce';
 import Button from '../components/ui/Button';
 import Champ, { styleInput, focusHandlers } from '../components/ui/Champ';
 import Carte from '../components/ui/Carte';
+import LigneTableau from '../components/ui/LigneTableau';
+import { BoutonIcone } from '../components/ui/Icone';
 import Modal from '../components/ui/Modal';
 import ModalConfirmation from '../components/ui/ModalConfirmation';
 import Alerte from '../components/ui/Alerte';
+import Toast from '../components/ui/Toast';
 import Badge, { TON_STATUT_RESERVATION } from '../components/ui/Badge';
 
 const LABEL_SEXE = { M: 'Homme', F: 'Femme' };
@@ -164,7 +167,7 @@ export default function Clients() {
       </div>
 
       {erreur && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="erreur">{erreur}</Alerte></div>}
-      {succes && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="succes">{succes}</Alerte></div>}
+      <Toast message={succes} onFermer={() => setSucces('')} />
 
       <input
         placeholder="Rechercher un client (nom, prénom, email)..."
@@ -186,38 +189,36 @@ export default function Clients() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--line)', textAlign: 'left' }}>
-                  {['Client', 'Sexe', 'Téléphone', 'Email', 'Adresse', 'Pièce ID', 'Inscrit le', ''].map((h) => (
+                  {/* Trois colonnes suffisent à retrouver quelqu'un. Sexe, e-mail,
+                      adresse et pièce d'identité obligeaient à défiler à l'horizontale
+                      pour atteindre les boutons ; ils sont désormais dans la fiche,
+                      au-dessus de l'historique des passages. */}
+                  {['Client', 'Téléphone', 'Inscrit le', ''].map((h) => (
                     <th key={h} style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12, color: 'var(--slate)', fontWeight: 500, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {clients.map((client) => (
-                  <tr key={client.id} style={{ borderBottom: '1px solid var(--line)' }}>
+                {clients.map((client, i) => (
+                  <LigneTableau key={client.id} index={i}>
                     <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>
                       {nomComplet(client)}
                       {!client.email && (
                         <span style={{ marginLeft: 6 }}><Badge label="Passage" ton="neutre" /></span>
                       )}
                     </td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>
-                      {labelSexe[client.sexe] || '-'}
-                    </td>
                     <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, whiteSpace: 'nowrap' }}>{client.telephone}</td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{client.email || '-'}</td>
-                    <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13, color: 'var(--slate)' }}>{client.adresse || '-'}</td>
-                    <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: 'var(--slate)' }}>{client.numeroPiece || '-'}</td>
                     <td className="mono" style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 12.5, color: 'var(--slate)', whiteSpace: 'nowrap' }}>
                       {new Date(client.createdAt).toLocaleDateString('fr-FR')}
                     </td>
                     <td style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                        <Button variante="secondaire" taille="sm" onClick={() => handleVoirHistorique(client)}>Historique</Button>
-                        <Button variante="secondaire" taille="sm" onClick={() => ouvrirEdition(client)}>Modifier</Button>
-                        <Button variante="danger" taille="sm" onClick={() => setClientASupprimer(client)}>Supprimer</Button>
+                        <BoutonIcone nom="fiche" ton="sejour" titre="Voir la fiche et les passages" onClick={() => handleVoirHistorique(client)} />
+                        <BoutonIcone nom="modifier" ton="neutre" titre="Modifier ce client" onClick={() => ouvrirEdition(client)} />
+                        <BoutonIcone nom="supprimer" ton="danger" titre="Supprimer ce client" onClick={() => setClientASupprimer(client)} />
                       </div>
                     </td>
-                  </tr>
+                  </LigneTableau>
                 ))}
               </tbody>
             </table>
@@ -298,9 +299,39 @@ export default function Clients() {
       <Modal
         ouvert={!!clientSelectionne}
         onFermer={() => setClientSelectionne(null)}
-        titre={clientSelectionne ? `Historique de ${nomComplet(clientSelectionne)}` : ''}
+        titre={clientSelectionne ? `Fiche de ${nomComplet(clientSelectionne)}` : ''}
         largeur={560}
       >
+        {/* Les coordonnées ouvrent la fiche : ce sont elles qu'on cherche quand on
+            clique sur un client, avant même ses passages. */}
+        {clientSelectionne && (
+          <div style={{
+            background: 'var(--stone)', borderRadius: 'var(--radius-sm)',
+            padding: 'var(--space-4)', marginBottom: 'var(--space-5)',
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 'var(--space-3)',
+          }}>
+            {[
+              ['Téléphone', clientSelectionne.telephone, true],
+              ['Sexe', labelSexe[clientSelectionne.sexe], false],
+              ['Email', clientSelectionne.email, false],
+              ['Adresse', clientSelectionne.adresse, false],
+              ['Pièce d\'identité', clientSelectionne.numeroPiece, true],
+              ['Inscrit le', new Date(clientSelectionne.createdAt).toLocaleDateString('fr-FR'), true],
+            ].map(([label, valeur, mono]) => (
+              <div key={label}>
+                <p style={{ margin: 0, fontSize: 11.5, color: 'var(--slate)' }}>{label}</p>
+                <p className={mono ? 'mono' : undefined} style={{ margin: '2px 0 0', fontSize: 13.5, color: valeur ? 'var(--ink)' : 'var(--slate-light)' }}>
+                  {valeur || 'non renseigné'}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p style={{ fontSize: 12, color: 'var(--slate)', fontWeight: 500, marginBottom: 'var(--space-3)' }}>
+          Passages {historique?.length > 0 && <span className="mono">({historique.length})</span>}
+        </p>
+
         {historique === null ? (
           <p style={{ color: 'var(--slate)' }}>Chargement de l'historique...</p>
         ) : historique.length === 0 ? (

@@ -52,9 +52,13 @@ export async function checkIn(req, res) {
     // d'une réservation prévue le mois prochain, et bloquer la chambre d'ici là.
     const heuresAvantArrivee = (new Date(reservation.dateArrivee) - Date.now()) / 3600000;
     if (heuresAvantArrivee > TOLERANCE_ARRIVEE_HEURES) {
+      // Message court et daté : lu dans un encart au-dessus du bouton, il doit
+      // tenir en une phrase et dire quand l'action redeviendra possible.
+      const ouverture = new Date(new Date(reservation.dateArrivee) - TOLERANCE_ARRIVEE_HEURES * 3600000);
+      const format = { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' };
       return res.status(400).json({
-        message: `Arrivée prévue le ${new Date(reservation.dateArrivee).toLocaleString('fr-FR')}. `
-               + `Le check-in n'est possible qu'à partir de ${TOLERANCE_ARRIVEE_HEURES}h avant.`,
+        message: `Arrivée prévue le ${new Date(reservation.dateArrivee).toLocaleDateString('fr-FR')} : `
+               + `le check-in ouvre ${TOLERANCE_ARRIVEE_HEURES} h avant, soit le ${ouverture.toLocaleString('fr-FR', format)}.`,
       });
     }
 
@@ -92,7 +96,6 @@ export async function checkIn(req, res) {
         titre: 'Un client vient d\'arriver',
         message: `Chambre ${reservation.chambre.numero} occupée. Le taux d'occupation est à jour.`,
         lien: '/',
-        roleCible: ADMIN,
       });
 
       return sejour;
@@ -174,9 +177,15 @@ export async function checkOut(req, res) {
           titre: 'Départ avec impayé',
           message: `Chambre ${sejour.reservation.chambre.numero} : le client est parti en laissant ${note.resteAPayer} dû.`,
           lien: '/paiements',
-          roleCible: ADMIN,
         });
       }
+
+      await notifier(tx, {
+        type: 'DEPART_CLIENT',
+        titre: 'Départ enregistré',
+        message: `Chambre ${sejour.reservation.chambre.numero} libérée et passée en nettoyage.`,
+        lien: '/chambres',
+      });
 
       return sejourMisAJour;
     });
@@ -212,6 +221,38 @@ export async function getSejourParReservation(req, res) {
 }
 const TARIF_HORAIRE_PAR_DEFAUT = 5000; // utilisé si le type de chambre n'a pas de tarif horaire configuré
 
+// Quelle remise appliquer à CETTE prolongation ?
+//
+// La prolongation est une négociation à part entière : un habitué à −10 % peut
+// obtenir −15 % sur les nuits ajoutées, ou rien du tout, et un client sans remise
+// peut en obtenir une pour la première fois. Le comptoir décide au cas par cas.
+//
+// Trois entrées possibles, et la distinction compte parce qu'il s'agit d'argent :
+//   remisePourcent absent  → on hérite de la remise de la réservation
+//   remisePourcent = 0     → aucune remise sur cette prolongation, explicitement
+//   remisePourcent = 1..100→ cette remise-là, quelle que soit celle d'origine
+//
+// Renvoie { pourcent } ou { erreur }.
+function remiseDeLaProlongation(valeurRecue, reservation) {
+  if (valeurRecue === undefined || valeurRecue === null || valeurRecue === '') {
+    return { pourcent: reservation.remiseChambrePourcent || 0 };
+  }
+
+  const nombre = Number(valeurRecue);
+  if (!Number.isInteger(nombre) || nombre < 0 || nombre > 100) {
+    return { erreur: 'La remise de prolongation doit être un pourcentage entier entre 0 et 100.' };
+  }
+  return { pourcent: nombre };
+}
+
+// Applique un pourcentage à un montant. Le pourcentage vient toujours de
+// remiseDeLaProlongation, jamais lu directement sur la réservation : c'est ce qui
+// garantit qu'une prolongation ne se voie pas imposer la remise d'origine.
+function appliquerRemise(montant, pourcent) {
+  if (!pourcent || pourcent <= 0) return montant;
+  return Math.round(montant * (1 - pourcent / 100) * 100) / 100;
+}
+
 // POST /api/sejours/:id/heures-supplementaires, body: { nombreHeures }
 export async function ajouterHeuresSupplementaires(req, res) {
   try {
@@ -230,11 +271,17 @@ export async function ajouterHeuresSupplementaires(req, res) {
     if (!sejour) return res.status(404).json({ message: 'Séjour non trouvé' });
     if (sejour.dateSortie) return res.status(400).json({ message: 'Impossible de prolonger un séjour déjà clôturé' });
 
-    const prixParHeure = Number(
+    const remise = remiseDeLaProlongation(req.body.remisePourcent, sejour.reservation);
+    if (remise.erreur) return res.status(400).json({ message: remise.erreur });
+
+    const prixPlein = Number(
       sejour.reservation.chambre.typeChambre.prixHeureSupplementaire || TARIF_HORAIRE_PAR_DEFAUT
     );
     const heures = Number(nombreHeures);
-    const montant = prixParHeure * heures;
+    // Le prix unitaire remisé est figé dans la ligne : la trace comptable doit
+    // montrer ce qui a réellement été facturé, pas le tarif public.
+    const prixParHeure = appliquerRemise(prixPlein, remise.pourcent);
+    const montant = Math.round(prixParHeure * heures * 100) / 100;
 
     const nouvelleDateDepart = new Date(sejour.reservation.dateDepart);
     nouvelleDateDepart.setHours(nouvelleDateDepart.getHours() + heures);
@@ -261,7 +308,9 @@ export async function ajouterHeuresSupplementaires(req, res) {
         },
       });
 
-      // Repousse la date de départ prévue et augmente le montant dû de la réservation
+      // Repousse la date de départ et augmente le montant dû. `remiseChambrePourcent`
+      // n'est délibérément PAS touché : la remise de la réservation d'origine reste
+      // celle d'origine, quelle que soit celle négociée sur cette prolongation.
       const reservation = await tx.reservation.update({
         where: { id: sejour.reservationId },
         data: {
@@ -270,10 +319,27 @@ export async function ajouterHeuresSupplementaires(req, res) {
         },
       });
 
+      await tracer(tx, req, {
+        action: 'PROLONGATION_SEJOUR',
+        cibleType: 'reservation',
+        cibleId: sejour.reservationId,
+        resume: `+${heures} h sur la réservation #${sejour.reservationId} (+${montant})`
+              + (remise.pourcent > 0 ? ` · remise ${remise.pourcent} % sur la prolongation` : ' · sans remise'),
+        avant: new Date(sejour.reservation.dateDepart).toISOString(),
+        apres: nouvelleDateDepart.toISOString(),
+      });
+
+      await notifier(tx, {
+        type: 'PROLONGATION_SEJOUR',
+        titre: 'Séjour prolongé',
+        message: `+${heures} h sur le séjour en cours, départ repoussé (+${montant}).`,
+        lien: '/reservations',
+      });
+
       return { enregistrement, reservation };
     });
 
-    res.status(201).json(resultat);
+    res.status(201).json({ ...resultat, montantAjoute: montant, remiseAppliquee: remise.pourcent });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Erreur serveur', error: error.message });
@@ -302,13 +368,11 @@ export async function ajouterNuitsSupplementaires(req, res) {
     if (!sejour) return res.status(404).json({ message: 'Séjour non trouvé' });
     if (sejour.dateSortie) return res.status(400).json({ message: 'Impossible de prolonger un séjour déjà clôturé' });
 
+    // Le mode de facturation d'origine ne commande plus la prolongation : un client
+    // arrivé pour trois heures peut décider de dormir, et un client à la nuitée peut
+    // ne vouloir que quelques heures de plus. C'est la demande du client au comptoir
+    // qui décide, pas la case cochée à la réservation.
     const { reservation } = sejour;
-    if (reservation.modeTarification !== 'NUITEE') {
-      return res.status(400).json({
-        message: 'Ce séjour est facturé à l\'heure : prolongez-le en heures supplémentaires.',
-      });
-    }
-
     const nuits = Number(nombreNuits);
     const nouvelleDateDepart = new Date(reservation.dateDepart);
     nouvelleDateDepart.setDate(nouvelleDateDepart.getDate() + nuits);
@@ -322,16 +386,24 @@ export async function ajouterNuitsSupplementaires(req, res) {
       });
     }
 
-    // Même tarif que la réservation d'origine, promotion comprise : la nuit
-    // ajoutée ne doit pas coûter autre chose que les précédentes.
-    const montant = calculerMontant(reservation.chambre.typeChambre, 'NUITEE', nuits, null);
+    const remise = remiseDeLaProlongation(req.body.remisePourcent, reservation);
+    if (remise.erreur) return res.status(400).json({ message: remise.erreur });
+
+    // Même tarif que la réservation d'origine, promotion du type de chambre
+    // comprise. La remise, elle, est celle négociée pour cette prolongation.
+    const montant = appliquerRemise(
+      calculerMontant(reservation.chambre.typeChambre, 'NUITEE', nuits, null),
+      remise.pourcent
+    );
 
     const resultat = await prisma.$transaction(async (tx) => {
       const misAJour = await tx.reservation.update({
         where: { id: reservation.id },
         data: {
           dateDepart: nouvelleDateDepart,
-          nombreNuits: { increment: nuits },
+          // Posé en valeur absolue, pas en incrément : sur une réservation horaire
+          // nombreNuits vaut NULL, et incrémenter NULL en SQL laisse NULL.
+          nombreNuits: (reservation.nombreNuits || 0) + nuits,
           montantTotal: { increment: montant },
         },
       });
@@ -340,15 +412,24 @@ export async function ajouterNuitsSupplementaires(req, res) {
         action: 'PROLONGATION_SEJOUR',
         cibleType: 'reservation',
         cibleId: reservation.id,
-        resume: `+${nuits} nuit(s) sur la réservation #${reservation.id}, chambre ${reservation.chambre.numero} (+${montant})`,
+        resume: `+${nuits} nuit(s) sur la réservation #${reservation.id}, chambre ${reservation.chambre.numero} (+${montant})`
+              + (remise.pourcent > 0 ? ` · remise ${remise.pourcent} % sur la prolongation` : ' · sans remise'),
         avant: new Date(reservation.dateDepart).toISOString(),
         apres: nouvelleDateDepart.toISOString(),
+      });
+
+      await notifier(tx, {
+        type: 'PROLONGATION_SEJOUR',
+        titre: 'Séjour prolongé',
+        message: `Chambre ${reservation.chambre.numero} : +${nuits} nuit(s), départ repoussé au `
+               + `${nouvelleDateDepart.toLocaleDateString('fr-FR')} (+${montant}).`,
+        lien: '/reservations',
       });
 
       return misAJour;
     });
 
-    res.status(201).json({ reservation: resultat, montantAjoute: montant });
+    res.status(201).json({ reservation: resultat, montantAjoute: montant, remiseAppliquee: remise.pourcent });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Erreur serveur', error: error.message });

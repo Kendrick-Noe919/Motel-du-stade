@@ -19,6 +19,8 @@ import parametreRoutes from './routes/parametre.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import journalRoutes from './routes/journal.routes.js';
 import { demarrerExpirationAutomatique } from './taches/expirationReservations.js';
+import { demarrerPurgeNotifications } from './taches/purgeNotifications.js';
+import { assurerParametresParDefaut } from './utils/parametres.js';
 
 const app = express();
 
@@ -68,7 +70,16 @@ app.use('/api/journal', journalRoutes);
 // ---------- Démarrage du serveur ----------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`✅ Noé Kendrick le Serveur a démarré sur http://localhost:${PORT}`);
+  console.log(`✅ Le serveur du Motel du Stade a démarré sur http://localhost:${PORT}`);
+
+  // Les réglages nés après la dernière migration sont créés ici, une fois pour
+  // toutes. Un échec ne doit pas empêcher le serveur de servir.
+  assurerParametresParDefaut()
+    .catch((e) => console.error('Paramètres par défaut :', e.message));
+
   // Libère les chambres des réservations restées sans confirmation
   demarrerExpirationAutomatique();
+
+  // Efface les notifications périmées : sans elle, la cloche accumule sans fin
+  demarrerPurgeNotifications();
 });

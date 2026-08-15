@@ -21,7 +21,10 @@
       "Bash(echo \"health: $\\(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/health\\)\")",
       "Bash(rm -f _test-vague2.mjs)",
       "Bash(node -e ' *)",
-      "Bash(cd \"c:/Users/abdou/Desktop/Gestion Auberge/Motel-du-stade/motel-backend\" && ls src/ && grep -rn \"bcrypt\" src/controllers/utilisateur.controller.js | head -5 && sed -n '/^model Utilisateur/,/^}/p;/^model Role/,/^}/p;/^model UtilisateurRole/,/^}/p' prisma/schema.prisma)"
+      "Bash(cd \"c:/Users/abdou/Desktop/Gestion Auberge/Motel-du-stade/motel-backend\" && ls src/ && grep -rn \"bcrypt\" src/controllers/utilisateur.controller.js | head -5 && sed -n '/^model Utilisateur/,/^}/p;/^model Role/,/^}/p;/^model UtilisateurRole/,/^}/p' prisma/schema.prisma)",
+      "Bash(rm -f .gitignore)",
+      "Bash(printf '%s\\\\n' '# Sauvegardes et dumps de la base.' '#' '# Ils contiennent les noms, telephones et e-mails des clients, ainsi que les' '# empreintes des mots de passe du personnel : ils nont rien a faire dans un depot.' database/ *.sql.gz '' '# Dependances et fichiers generes' node_modules/ dist/ build/ '' '# Secrets et configuration locale' .env .env.local .env.*.local '' '# Journaux et fichiers temporaires' *.log npm-debug.log* .DS_Store Thumbs.db)",
+      "Bash(git check-ignore *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\abdou\\Desktop\\Gestion Auberge\\Motel-du-stade\\motel-backend",

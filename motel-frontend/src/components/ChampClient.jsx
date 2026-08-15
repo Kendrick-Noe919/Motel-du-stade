@@ -46,7 +46,12 @@ export default function ChampClient({ valeur, onChanger }) {
         if (exact) {
           setNom(exact.nom || '');
           setPrenom(exact.prenom || '');
-          onChanger({ clientId: exact.id, telephone: exact.telephone, nom: exact.nom, prenom: exact.prenom });
+          // nombreSejours accompagne la fiche : c'est lui qui dit à l'écran de
+          // réservation qu'il a affaire à un habitué.
+          onChanger({
+            clientId: exact.id, telephone: exact.telephone, nom: exact.nom, prenom: exact.prenom,
+            nombreSejours: exact.nombreSejours || 0,
+          });
         } else {
           onChanger({ telephone: numero, nom, prenom, clientId: null });
         }
@@ -61,7 +66,11 @@ export default function ChampClient({ valeur, onChanger }) {
   function majIdentite(champ, val) {
     const suivant = champ === 'nom' ? { nom: val, prenom } : { nom, prenom: val };
     if (champ === 'nom') setNom(val); else setPrenom(val);
-    onChanger({ telephone: telephone.trim(), ...suivant, clientId: trouve?.id ?? null });
+    onChanger({
+      telephone: telephone.trim(), ...suivant,
+      clientId: trouve?.id ?? null,
+      nombreSejours: trouve?.nombreSejours || 0,
+    });
   }
 
   // Une seule ligne de statut, toujours présente, dont seul le contenu change

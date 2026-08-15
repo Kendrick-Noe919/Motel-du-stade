@@ -3,12 +3,14 @@ import { useSearchParams } from 'react-router-dom';
 import { getReservations } from '../services/reservation.service';
 import Button from '../components/ui/Button';
 import Alerte from '../components/ui/Alerte';
+import Toast from '../components/ui/Toast';
 import Champ, { styleInput } from '../components/ui/Champ';
 import Carte from '../components/ui/Carte';
 import Modal from '../components/ui/Modal';
 import Badge, { TON_STATUT_RESERVATION } from '../components/ui/Badge';
 import { getPaiements, enregistrerPaiement, rembourserPaiement, telechargerFacture } from '../services/paiement.service';
 import LigneTableau from '../components/ui/LigneTableau';
+import { BoutonIcone } from '../components/ui/Icone';
 
 const MODES_PAIEMENT = ['ESPECES', 'CARTE', 'VIREMENT', 'MOBILE_MONEY'];
 
@@ -54,6 +56,9 @@ export default function Paiements() {
   const [paiementARembourser, setPaiementARembourser] = useState(null);
   const [annulerReservationAussi, setAnnulerReservationAussi] = useState(false);
   const [remboursementEnCours, setRemboursementEnCours] = useState(false);
+  const [motifRemboursement, setMotifRemboursement] = useState('');
+  const [motifExige, setMotifExige] = useState(false);
+  const [messageRemboursement, setMessageRemboursement] = useState(null);
 
   useEffect(() => { chargerDonnees(); }, []);
 
@@ -128,18 +133,26 @@ export default function Paiements() {
   function ouvrirModalRemboursement(paiement) {
     setPaiementARembourser(paiement);
     setAnnulerReservationAussi(false);
+    setMotifRemboursement('');
+    setMotifExige(false);
+    setMessageRemboursement(null);
   }
 
   async function handleConfirmerRemboursement() {
     setRemboursementEnCours(true);
+    setMessageRemboursement(null);
     try {
-      await rembourserPaiement(paiementARembourser.id, annulerReservationAussi);
+      await rembourserPaiement(paiementARembourser.id, annulerReservationAussi, motifRemboursement);
       setSucces('Remboursement effectué.');
       setPaiementARembourser(null);
+      setMotifRemboursement('');
       await chargerDonnees();
     } catch (err) {
-      setErreur(err.response?.data?.message || 'Erreur lors du remboursement');
-      setPaiementARembourser(null);
+      // Le serveur réclame un motif quand la prestation a déjà été rendue : le
+      // modal reste ouvert et fait apparaître le champ, au lieu de se fermer sur
+      // une erreur que l'utilisateur ne saurait pas corriger.
+      if (err.response?.data?.motifRequis) setMotifExige(true);
+      setMessageRemboursement(err.response?.data?.message || 'Erreur lors du remboursement');
     } finally {
       setRemboursementEnCours(false);
     }
@@ -185,7 +198,7 @@ export default function Paiements() {
       </div>
 
       {erreur && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="erreur">{erreur}</Alerte></div>}
-      {succes && <div style={{ marginBottom: 'var(--space-4)' }}><Alerte variante="succes">{succes}</Alerte></div>}
+      <Toast message={succes} onFermer={() => setSucces('')} />
 
       {/* ---------- Filtres par état de règlement ---------- */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 'var(--space-5)' }}>
@@ -229,8 +242,8 @@ export default function Paiements() {
                 </tr>
               </thead>
               <tbody>
-                {reservationsAffichees.map((r) => (
-                  <LigneTableau key={r.id}>
+                {reservationsAffichees.map((r, i) => (
+                  <LigneTableau key={r.id} index={i}>
                     <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>
                       {nomClient(r.client)}
                     </td>
@@ -256,7 +269,12 @@ export default function Paiements() {
                     </td>
                     <td style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'right' }}>
                       {r.resteAPayer > 0 && (
-                        <Button taille="sm" onClick={() => ouvrirPaiement(r)}>Régler</Button>
+                        <BoutonIcone
+                          nom="regler"
+                          ton="argent"
+                          titre={`Encaisser les ${r.resteAPayer} restants`}
+                          onClick={() => ouvrirPaiement(r)}
+                        />
                       )}
                     </td>
                   </LigneTableau>
@@ -298,8 +316,8 @@ export default function Paiements() {
                   </tr>
                 </thead>
                 <tbody>
-                  {paiements.map((p) => (
-                    <LigneTableau key={p.id}>
+                  {paiements.map((p, i) => (
+                    <LigneTableau key={p.id} index={i}>
                       <td style={{ padding: 'var(--space-3) var(--space-4)', fontSize: 13.5, fontWeight: 500, whiteSpace: 'nowrap' }}>
                         {nomClient(p.reservation?.client)}
                       </td>
@@ -313,16 +331,21 @@ export default function Paiements() {
                       </td>
                       <td style={{ padding: 'var(--space-3) var(--space-4)', textAlign: 'right' }}>
                         <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                          <Button
-                            variante="secondaire"
-                            taille="sm"
+                          <BoutonIcone
+                            nom="facture"
+                            ton="neutre"
+                            titre={p.facture ? `Télécharger la facture ${p.facture.numeroFacture}` : 'Aucune facture pour ce paiement'}
                             onClick={() => handleTelechargerFacture(p)}
-                            enCours={telechargementEnCours === p.id}
-                            disabled={!p.facture}
-                          >
-                            Facture PDF
-                          </Button>
-                          {!p.rembourse && <Button variante="secondaire" taille="sm" onClick={() => ouvrirModalRemboursement(p)}>Rembourser</Button>}
+                            disabled={!p.facture || telechargementEnCours === p.id}
+                          />
+                          {!p.rembourse && (
+                            <BoutonIcone
+                              nom="rembourser"
+                              ton="danger"
+                              titre="Rembourser ce paiement"
+                              onClick={() => ouvrirModalRemboursement(p)}
+                            />
+                          )}
                         </div>
                       </td>
                     </LigneTableau>
@@ -441,9 +464,38 @@ export default function Paiements() {
               </span>
             </label>
 
+            {/* Le motif n'apparaît que si le serveur le réclame : sur une réservation
+                annulée avant l'arrivée, un remboursement va de soi et ne demande
+                aucune justification. */}
+            {motifExige && (
+              <Champ label="Motif du remboursement (obligatoire)">
+                <input
+                  value={motifRemboursement}
+                  onChange={(e) => setMotifRemboursement(e.target.value)}
+                  placeholder="ex : double saisie, erreur de montant, geste commercial"
+                  style={styleInput}
+                  autoFocus
+                />
+              </Champ>
+            )}
+
+            {messageRemboursement && (
+              <div className="anim-alerte" style={{
+                background: 'var(--danger-bg)', borderLeft: '3px solid var(--danger)',
+                borderRadius: 'var(--radius-sm)', padding: 'var(--space-3)', fontSize: 13, color: 'var(--ink)',
+              }}>
+                {messageRemboursement}
+              </div>
+            )}
+
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
               <Button variante="secondaire" onClick={() => setPaiementARembourser(null)}>Annuler</Button>
-              <Button variante="danger" onClick={handleConfirmerRemboursement} enCours={remboursementEnCours}>
+              <Button
+                variante="danger"
+                onClick={handleConfirmerRemboursement}
+                enCours={remboursementEnCours}
+                disabled={motifExige && !motifRemboursement.trim()}
+              >
                 Confirmer le remboursement
               </Button>
             </div>

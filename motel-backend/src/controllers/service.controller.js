@@ -43,7 +43,6 @@ export async function createService(req, res) {
         titre: 'Nouvel article au menu',
         message: `${cree.nom} (${cree.categorie}) est disponible à la vente à ${cree.prix}.`,
         lien: '/ventes',
-        roleCible: BARMAN,
       });
 
       return cree;

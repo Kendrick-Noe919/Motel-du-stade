@@ -4,8 +4,12 @@
   --stone-dim: #EEEEEE;
   --surface: #FFFFFF;
   --ink: #17241F;
-  --slate: #6B7280;
-  --slate-light: #9CA3AF;
+  /* Gris de texte assombris. Les précédents (#6B7280 et #9CA3AF) donnaient un
+     contraste de 4,83 et 2,54 sur fond blanc : le second échouait au seuil de 4,5
+     exigé pour du texte courant, et se dissolvait dans le fond. Mesuré, pas estimé.
+     Les nouvelles valeurs donnent 7,56 et 4,83. */
+  --slate: #4B5563;
+  --slate-light: #6B7280;
 
   --moss: #14532D;        /* vert forêt profond : sidebar actif, boutons primaires */
   --moss-light: #1F6B3D;
@@ -20,14 +24,19 @@
 
   --gradient-signal: linear-gradient(135deg, #22C55E 0%, #14532D 100%);
 
-  /* ---------- États sémantiques ---------- */
-  --success: #22AD5C;
+  /* ---------- États sémantiques ----------
+     Ces couleurs servent AUSSI de couleur de texte (montants, badges, mentions
+     « soldé »). Les versions vives précédentes tombaient entre 2,15 et 3,76 de
+     contraste sur blanc : lisibles pour un aplat, pas pour du texte. Assombries,
+     elles passent toutes au-dessus de 4,5, et restent assez saturées pour rester
+     reconnaissables au premier coup d'œil. Les fonds clairs ne bougent pas. */
+  --success: #15803D;
   --success-bg: #E9FBF0;
-  --warning: #F59E0B;
+  --warning: #B45309;
   --warning-bg: #FFFBEB;
-  --danger: #EF4444;
+  --danger: #DC2626;
   --danger-bg: #FEF2F2;
-  --info: #3B82F6;
+  --info: #1D4ED8;
   --info-bg: #EFF6FF;
 
   --font-display: 'Satoshi', ui-sans-serif, system-ui, sans-serif;

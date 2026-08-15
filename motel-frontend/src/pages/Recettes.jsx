@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getRecettes, getRapportJournee } from '../services/recette.service';
 import SelecteurPeriode, { bornesPeriode } from '../components/SelecteurPeriode';
 import Carte from '../components/ui/Carte';
+import LigneTableau from '../components/ui/LigneTableau';
 import Button from '../components/ui/Button';
 import Alerte from '../components/ui/Alerte';
 import BarresComparees, { TEINTES } from '../components/ui/BarresComparees';
@@ -261,8 +262,8 @@ export default function Recettes() {
                     </tr>
                   </thead>
                   <tbody>
-                    {rapport.postes.map((p) => (
-                      <tr key={p.caisseId} style={{ borderBottom: '1px solid var(--line)' }}>
+                    {rapport.postes.map((p, i) => (
+                      <LigneTableau key={p.caisseId} index={i}>
                         <td style={{ padding: '9px 12px', fontWeight: 600 }}>{p.tenuePar}</td>
                         <td style={{ padding: '9px 12px', color: p.ouverte ? 'var(--warning)' : 'var(--slate)' }}>
                           {p.ouverte ? 'Ouverte' : 'Fermée'}
@@ -279,7 +280,7 @@ export default function Recettes() {
                         }}>
                           {p.ecart === null ? '-' : `${p.ecart > 0 ? '+' : ''}${fcfa(p.ecart)}`}
                         </td>
-                      </tr>
+                      </LigneTableau>
                     ))}
                   </tbody>
                 </table>

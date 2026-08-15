@@ -263,6 +263,17 @@ model Reservation {
   statut           StatutReservation @default(EN_ATTENTE)
   source           SourceReservation @default(RECEPTION)
 
+  // Fidélité : remise accordée au comptoir à un client qui revient. Toujours
+  // facultative, décidée séjour par séjour et jamais automatique — c'est un geste
+  // commercial, pas un barème.
+  //
+  // La remise chambre est appliquée une fois pour toutes au montant de la
+  // réservation. La remise bar, elle, reste vivante pendant tout le séjour : chaque
+  // consommation portée sur la chambre en bénéficie au moment où elle est saisie.
+  remiseChambrePourcent Int?
+  remiseBarPourcent     Int?
+  remiseMotif           String?
+
   client           Client            @relation(fields: [clientId], references: [id])
   clientId         Int
   chambre          Chambre           @relation(fields: [chambreId], references: [id])

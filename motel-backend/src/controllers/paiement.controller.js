@@ -1,6 +1,8 @@
 import prisma from '../utils/prisma.js';
 import PDFDocument from 'pdfkit';
 import { exigerCaisseOuverte } from './caisse.controller.js';
+import { notifier } from '../utils/notifications.js';
+import { tracer } from '../utils/journal.js';
 
 
 const TAUX_TVA = 0.18; // 18%, ajuste selon la réglementation en vigueur
@@ -85,6 +87,14 @@ export async function enregistrerPaiement(req, res) {
         },
       });
 
+      await notifier(tx, {
+        type: 'PAIEMENT_ENCAISSE',
+        titre: 'Paiement encaissé',
+        message: `${montantTTC} reçus de ${reservation.client.prenom || ''} ${reservation.client.nom || ''}`.trim()
+               + ` en ${modePaiement} · réservation #${reservation.id}.`,
+        lien: '/paiements',
+      });
+
       return { paiement, facture, reservation: reservationMiseAJour, caisse: caisseOperateur, mouvement };
     });
 
@@ -160,6 +170,27 @@ export async function rembourserPaiement(req, res) {
       });
     }
 
+    // Rembourser une prestation déjà rendue n'est pas une opération ordinaire.
+    //
+    // Un remboursement se justifie de lui-même quand le client n'est pas venu ou
+    // s'est décommandé. Sur un séjour occupé ou déjà terminé, la chambre a bien
+    // été fournie : rendre l'argent revient à offrir le séjour. Cela reste possible
+    // — une double saisie, un mauvais montant, un geste commercial arrivent — mais
+    // plus d'un simple clic : il faut écrire pourquoi, et la raison part au journal.
+    const sejour = paiement.reservation.sejour;
+    const statut = paiement.reservation.statut;
+    const prestationRendue = (sejour && !sejour.dateSortie) || statut === 'EN_COURS' || statut === 'TERMINEE';
+
+    const motif = (req.body.motif || '').trim();
+    if (prestationRendue && !motif) {
+      return res.status(409).json({
+        message: statut === 'TERMINEE'
+          ? 'Ce séjour est terminé : la chambre a été fournie. Un remboursement reste possible (erreur de saisie, geste commercial) mais demande un motif écrit.'
+          : 'Le client occupe la chambre : la prestation est en cours. Un remboursement reste possible mais demande un motif écrit.',
+        motifRequis: true,
+      });
+    }
+
     const resultat = await prisma.$transaction(async (tx) => {
       const caisse = await exigerCaisseOuverte(tx, req.user.id);
 
@@ -190,6 +221,25 @@ export async function rembourserPaiement(req, res) {
           data: { statut: 'ANNULEE' },
         });
       }
+
+      // Le motif d'un remboursement sur prestation rendue doit survivre à l'écran :
+      // c'est la seule pièce qui explique une sortie d'argent sur un séjour honoré.
+      await tracer(tx, req, {
+        action: 'REMBOURSEMENT',
+        cibleType: 'paiement',
+        cibleId: paiement.id,
+        resume: `Remboursement de ${paiement.montant} · réservation #${paiement.reservationId}`
+              + (prestationRendue ? ` · prestation rendue (${statut}) · motif : ${motif}` : '')
+              + (annulerReservation ? ' · réservation annulée' : ''),
+      });
+
+      await notifier(tx, {
+        type: 'REMBOURSEMENT',
+        titre: 'Remboursement effectué',
+        message: `${paiement.montant} remboursés sur la réservation #${paiement.reservationId}`
+               + (prestationRendue ? ` — prestation déjà rendue. Motif : ${motif}` : '.'),
+        lien: '/paiements',
+      });
 
       return { paiement: paiementRembourse, reservation, mouvement, caisseId: caisse.id };
     });
