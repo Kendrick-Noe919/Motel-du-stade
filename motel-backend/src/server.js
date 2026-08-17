@@ -18,6 +18,8 @@ import venteRoutes from './routes/vente.routes.js';
 import parametreRoutes from './routes/parametre.routes.js';
 import notificationRoutes from './routes/notification.routes.js';
 import journalRoutes from './routes/journal.routes.js';
+import controleRoutes from './routes/controle.routes.js';
+import { barriereLicence } from './middlewares/licence.middleware.js';
 import { demarrerExpirationAutomatique } from './taches/expirationReservations.js';
 import { demarrerPurgeNotifications } from './taches/purgeNotifications.js';
 import { assurerParametresParDefaut } from './utils/parametres.js';
@@ -48,6 +50,16 @@ app.use(express.json());    // permet de lire le JSON envoyé dans le corps des 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', message: 'Le serveur motel fonctionne' });
 });
+
+// ---------- Console de licence ----------
+// Montée AVANT la barrière : elle doit rester joignable même quand l'application
+// est suspendue, faute de quoi on ne pourrait plus jamais la réactiver.
+app.use('/api/systeme', controleRoutes);
+
+// ---------- Barrière de licence ----------
+// À partir d'ici, si l'interrupteur est sur « suspendu », toute route métier répond
+// 503 et le frontend bascule sur la page de blocage. Les données restent intactes.
+app.use(barriereLicence);
 
 // ---------- Routes de l'application ----------
 app.use('/api/types-chambre', typeChambreRoutes);

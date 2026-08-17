@@ -22,6 +22,11 @@ api.interceptors.response.use(
       localStorage.removeItem('utilisateur');
       window.location.href = '/login';
     }
+    // Application suspendue en cours de session : on recharge, la porte de licence
+    // prend le relais et affiche la page de blocage sans laisser d'écran cassé.
+    if (error.response?.status === 503 && error.response?.data?.suspendu) {
+      window.location.reload();
+    }
     return Promise.reject(error);
   }
 );
